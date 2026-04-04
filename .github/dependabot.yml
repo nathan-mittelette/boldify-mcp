@@ -1,0 +1,20 @@
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  - package-ecosystem: 'cargo'
+    rebase-strategy: auto
+    open-pull-requests-limit: 20
+    directory: '/'
+    schedule:
+      interval: 'monthly'
+    reviewers:
+      - 'nathan-mittelette'
+  - package-ecosystem: 'github-actions'
+    rebase-strategy: auto
+    open-pull-requests-limit: 20
+    directory: '/'
+    schedule:
+      interval: 'monthly'
+    reviewers:
+      - 'nathan-mittelette'

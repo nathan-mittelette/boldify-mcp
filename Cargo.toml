@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "parser",
+    "converter",
+    "service",
+    "api-syntaxes",
+    "api-convert",
+    "mcp",
+]
+resolver = "2"
