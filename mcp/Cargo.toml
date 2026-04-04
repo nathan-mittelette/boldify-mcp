@@ -13,4 +13,4 @@ service    = { path = "../service" }
 rmcp       = { version = "0.1" }
 serde_json = "1"
 tokio      = { version = "1", optional = true }
-axum       = { version = "0.7", optional = true }
+axum       = { version = "0.8", optional = true }
