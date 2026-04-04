@@ -87,9 +87,9 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "aws_lambda_events"
-version = "0.15.1"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7319a086b79c3ff026a33a61e80f04fd3885fbb73237981ea080d21944e1cb1c"
+checksum = "474e5c215398b56aa1c8021cb51907d132c022737dc86b1b5ac9a3fa0fa25fdc"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -129,7 +129,7 @@ dependencies = [
  "serde_urlencoded",
  "sync_wrapper",
  "tokio",
- "tower 0.5.3",
+ "tower",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -162,7 +162,7 @@ dependencies = [
  "serde_urlencoded",
  "sync_wrapper",
  "tokio",
- "tower 0.5.3",
+ "tower",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -678,15 +678,13 @@ dependencies = [
 
 [[package]]
 name = "lambda_http"
-version = "0.12.0"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56eed1f61ea0efe7e89e1f018d95016959169b4194498a0283e950037bab6bb9"
+checksum = "c54938eab7a90e46a59fef2332f7fbcd5cfeba74a8bfc741e3f48a2504e96cd2"
 dependencies = [
  "aws_lambda_events",
- "base64 0.22.1",
  "bytes",
  "encoding_rs",
- "futures",
  "futures-util",
  "http",
  "http-body",
@@ -705,20 +703,18 @@ dependencies = [
 
 [[package]]
 name = "lambda_runtime"
-version = "0.12.0"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7a3eecde134218c7388f13079ab133552a251c319683a99495c048d30363927"
+checksum = "7c58c2197a86a6b73fdc61f18be54de1b1f7681d2df91e49798eac6ea2d482da"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
  "bytes",
  "futures",
  "http",
- "http-body",
  "http-body-util",
  "http-serde",
  "hyper",
- "hyper-util",
  "lambda_runtime_api_client",
  "pin-project",
  "serde",
@@ -726,16 +722,15 @@ dependencies = [
  "serde_path_to_error",
  "tokio",
  "tokio-stream",
- "tower 0.4.13",
- "tower-layer",
+ "tower",
  "tracing",
 ]
 
 [[package]]
 name = "lambda_runtime_api_client"
-version = "0.11.1"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c90a10f094475a34a04da2be11686c4dcfe214d93413162db9ffdff3d3af293a"
+checksum = "b5e9ffa99f1e87b21d42ac98fe7eac55f4cfb9ed14677a64a7dab4d8f44399a4"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -745,9 +740,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "tokio",
- "tower 0.4.13",
- "tower-service",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1385,21 +1378,6 @@ dependencies = [
  "futures-sink",
  "pin-project-lite",
  "tokio",
-]
-
-[[package]]
-name = "tower"
-version = "0.4.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8fa9be0de6cf49e536ce1851f987bd21a43b771b09473c3549a6c853db37c1c"
-dependencies = [
- "futures-core",
- "futures-util",
- "pin-project",
- "pin-project-lite",
- "tower-layer",
- "tower-service",
- "tracing",
 ]
 
 [[package]]
