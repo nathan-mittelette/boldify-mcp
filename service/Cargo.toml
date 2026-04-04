@@ -6,4 +6,4 @@ edition = "2021"
 [dependencies]
 parser    = { path = "../parser" }
 converter = { path = "../converter" }
-thiserror = "1"
+thiserror = "2"
