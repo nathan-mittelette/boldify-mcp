@@ -43,31 +43,10 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
-      - name: Build workspace
-        run: cargo build --workspace
-
-  test-mcp-features:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
       - name: Test and build MCP with all features
         run: |
           cargo test --package mcp --all-features
           cargo build --package mcp --all-features
+
+      - name: Build workspace
+        run: cargo build --workspace
