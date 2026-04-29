@@ -43,5 +43,13 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Test and build MCP with all features
+        strategy:
+          matrix:
+            feature: [cli, http]
+        run: |
+          cargo test --package mcp --features ${{ matrix.feature }}
+          cargo build --package mcp --features ${{ matrix.feature }}
+
       - name: Build workspace
         run: cargo build --workspace
