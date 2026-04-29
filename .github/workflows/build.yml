@@ -40,13 +40,8 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Run tests
-        run: cargo test --workspace
+      - name: Run tests with all features
+        run: cargo test --workspace --all-features
 
-      - name: Test and build MCP with all features
-        run: |
-          cargo test --package mcp --all-features
-          cargo build --package mcp --all-features
-
-      - name: Build workspace
-        run: cargo build --workspace
+      - name: Build workspace with all features
+        run: cargo build --workspace --all-features
