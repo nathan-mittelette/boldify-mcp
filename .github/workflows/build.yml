@@ -49,9 +49,6 @@ jobs:
   test-mcp-features:
     needs: build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        feature: [cli, http]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -70,8 +67,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Test and build MCP with feature ${{ matrix.feature }}
+      - name: Test and build MCP with all features
         run: |
-          FEATURE=${{ matrix.feature }}
-          cargo test --package mcp --features $FEATURE
-          cargo build --package mcp --features $FEATURE
+          cargo test --package mcp --all-features
+          cargo build --package mcp --all-features
