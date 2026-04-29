@@ -48,8 +48,9 @@ jobs:
           matrix:
             feature: [cli, http]
         run: |
-          cargo test --package mcp --features ${{ matrix.feature }}
-          cargo build --package mcp --features ${{ matrix.feature }}
+          FEATURE=${{ matrix.feature }}
+          cargo test --package mcp --features $FEATURE
+          cargo build --package mcp --features $FEATURE
 
       - name: Build workspace
         run: cargo build --workspace
