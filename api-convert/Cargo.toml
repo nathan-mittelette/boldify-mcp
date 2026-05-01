@@ -3,6 +3,14 @@ name    = "api-convert"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+debug = false
+strip = true
+codegen-units = 1
+opt-level = "z"
+lto = true
+panic = "abort"
+
 [dependencies]
 parser       = { path = "../parser" }
 service      = { path = "../service" }

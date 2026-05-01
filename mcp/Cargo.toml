@@ -3,6 +3,14 @@ name    = "mcp"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+debug = false
+strip = true
+codegen-units = 1
+opt-level = "z"
+lto = true
+panic = "abort"
+
 [features]
 default = []
 cli     = ["rmcp/transport-io", "tokio/io-std", "tokio/rt-multi-thread"]
