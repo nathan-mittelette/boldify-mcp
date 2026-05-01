@@ -3,7 +3,6 @@
 ///
 /// Ces tests ne vérifient rien pour l'instant : ils affichent l'output réel
 /// pour qu'on puisse décider ensemble ce que chaque post doit produire.
-
 use service::ContentService;
 
 fn svc() -> ContentService {

@@ -394,7 +394,7 @@ mod tests {
         buf
     }
 
-    fn find_node<'a>(nodes: &'a [ContainerNode], ct: ContainerType) -> Option<&'a ContainerNode> {
+    fn find_node(nodes: &[ContainerNode], ct: ContainerType) -> Option<&ContainerNode> {
         fn search<'a>(children: &'a [InlineNode], ct: &ContainerType) -> Option<&'a ContainerNode> {
             for child in children {
                 match child {

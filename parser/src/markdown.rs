@@ -298,10 +298,10 @@ mod tests {
             .collect()
     }
 
-    fn find_container<'a>(
-        nodes: &'a [ContainerNode],
+    fn find_container(
+        nodes: &[ContainerNode],
         ct: ContainerType,
-    ) -> Option<&'a ContainerNode> {
+    ) -> Option<&ContainerNode> {
         for node in nodes {
             for child in &node.children {
                 if let InlineNode::Container(c) = child {
@@ -314,10 +314,10 @@ mod tests {
         None
     }
 
-    fn find_container_in_inline<'a>(
-        inline_nodes: &'a [InlineNode],
+    fn find_container_in_inline(
+        inline_nodes: &[InlineNode],
         ct: ContainerType,
-    ) -> Option<&'a ContainerNode> {
+    ) -> Option<&ContainerNode> {
         for node in inline_nodes {
             if let InlineNode::Container(c) = node {
                 if c.container_type == ct {
@@ -819,7 +819,7 @@ mod tests {
     fn post_avec_accents_dans_styles() {
         let input = "**Développeur** passionné par l'*élégance* du code.";
         let result = MarkdownParser.parse(input).unwrap();
-        assert!(result.len() >= 1);
+        assert!(!result.is_empty());
         let bold = find_container(&result, ContainerType::Bold).unwrap();
         let text = extract_text_from_container(bold);
         assert!(text.contains("Développeur"));
@@ -829,7 +829,7 @@ mod tests {
     fn post_avec_ponctuation_speciale() {
         let input = "**L'innovation** — c'est aussi *oser dire non* à l'inutile…";
         let result = MarkdownParser.parse(input).unwrap();
-        assert!(result.len() >= 1);
+        assert!(!result.is_empty());
     }
 
     // Tests avancés - Cas limites et robustesse
