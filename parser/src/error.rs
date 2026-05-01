@@ -17,7 +17,7 @@ impl fmt::Display for SourcePosition {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ParseError {
     #[error(
         "Symbole non supporté : `{symbol}` à la position {position}.\n\
@@ -32,6 +32,9 @@ pub enum ParseError {
 
     #[error("Document HTML invalide : {0}")]
     InvalidHtml(String),
+
+    #[error("Entrée trop volumineuse : {found} octets (maximum : {max})")]
+    InputTooLarge { found: usize, max: usize },
 
     #[error("Balise HTML non fermée : `{tag}` ouverte à {position}")]
     UnclosedTag {

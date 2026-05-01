@@ -1,0 +1,4 @@
+[[mcp_servers]]
+name = "boldify-mcp"
+transport = "stdio"
+command = "/Users/axopen/Perso/Developer/boldify-mcp/target/release/mcp"

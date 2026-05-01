@@ -5,12 +5,14 @@ edition = "2021"
 
 [features]
 default = []
-cli     = ["rmcp/transport-io"]
-http    = ["rmcp/transport-sse-server", "tokio/full", "dep:axum"]
+cli     = ["rmcp/transport-io", "tokio/io-std", "tokio/rt-multi-thread"]
+http    = ["rmcp/transport-streamable-http-server", "tokio/full", "dep:axum"]
 
 [dependencies]
 service    = { path = "../service" }
-rmcp       = { version = "0.10" }
+rmcp       = { version = "1.5" }
+serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio      = { version = "1", optional = true }
+tokio      = { version = "1", features = ["rt", "macros"] }
+anyhow     = "1"
 axum       = { version = "0.8", optional = true }

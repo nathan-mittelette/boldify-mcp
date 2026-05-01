@@ -1,8 +1,14 @@
 pub mod ast;
 pub mod error;
+pub mod html;
+pub mod id;
+pub mod inline;
+pub mod markdown;
 
 pub use ast::*;
-pub use error::ParseError;
+pub use error::{ParseError, SourcePosition};
+pub use html::HtmlParser;
+pub use markdown::MarkdownParser;
 
 pub trait Parser {
     fn parse(&self, input: &str) -> Result<Vec<ContainerNode>, ParseError>;
