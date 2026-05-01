@@ -298,10 +298,7 @@ mod tests {
             .collect()
     }
 
-    fn find_container(
-        nodes: &[ContainerNode],
-        ct: ContainerType,
-    ) -> Option<&ContainerNode> {
+    fn find_container(nodes: &[ContainerNode], ct: ContainerType) -> Option<&ContainerNode> {
         for node in nodes {
             for child in &node.children {
                 if let InlineNode::Container(c) = child {
