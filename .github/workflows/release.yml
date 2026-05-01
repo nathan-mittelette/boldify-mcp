@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.target }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
 
     strategy:
       fail-fast: false
@@ -19,14 +19,18 @@ jobs:
         include:
           # Linux
           - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
             tool: cross
           - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
             tool: cross
           # macOS
           - target: x86_64-apple-darwin
-            tool: zigbuild
+            runner: macos-13
+            tool: cargo
           - target: aarch64-apple-darwin
-            tool: zigbuild
+            runner: macos-14
+            tool: cargo
 
     steps:
       - uses: actions/checkout@v4
@@ -52,19 +56,13 @@ jobs:
         if: matrix.tool == 'cross'
         uses: taiki-e/install-action@cross
 
-      - name: Install cargo-zigbuild
-        if: matrix.tool == 'zigbuild'
-        run: |
-          pip install ziglang
-          cargo install cargo-zigbuild
-
       - name: Build (cross)
         if: matrix.tool == 'cross'
         run: cross build --release --target ${{ matrix.target }} -p mcp --features mcp/cli
 
-      - name: Build (zigbuild)
-        if: matrix.tool == 'zigbuild'
-        run: cargo zigbuild --release --target ${{ matrix.target }} -p mcp --features mcp/cli
+      - name: Build (cargo)
+        if: matrix.tool == 'cargo'
+        run: cargo build --release --target ${{ matrix.target }} -p mcp --features mcp/cli
 
       - name: Rename binary
         run: |
