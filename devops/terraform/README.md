@@ -29,7 +29,7 @@ No resources.
 | ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_api_gateway"></a> [api\_gateway](#input\_api\_gateway) | n/a | <pre>object({<br/>    cors = object({<br/>      allow_origins = set(string)<br/>      allow_headers = set(string)<br/>      allow_methods = set(string)<br/>    }),<br/>    log = object({<br/>      retention = number<br/>    })<br/>  })</pre> | n/a | yes |
 | <a name="input_dns"></a> [dns](#input\_dns) | n/a | <pre>object({<br/>    root_domain = string<br/>    domain_name = string<br/>  })</pre> | n/a | yes |
-| <a name="input_lambdas"></a> [lambdas](#input\_lambdas) | n/a | <pre>set(object({<br/>    name        = string<br/>    output      = string<br/>    source      = string<br/>    description = string<br/>    memory      = string<br/>    timeout     = string<br/>    runtime     = string<br/>    handler     = string<br/>    http = object({<br/>      method = string<br/>      path   = string<br/>    })<br/>  }))</pre> | n/a | yes |
+| <a name="input_lambdas"></a> [lambdas](#input\_lambdas) | n/a | <pre>set(object({<br/>    name        = string<br/>    output      = string<br/>    source      = string<br/>    description = string<br/>    memory      = string<br/>    timeout     = string<br/>    runtime     = string<br/>    handler     = string<br/>    http = object({<br/>      method = string<br/>      path   = string<br/>    })<br/>    layers       = optional(list(string), [])<br/>    environments = optional(map(string), {})<br/>  }))</pre> | n/a | yes |
 | <a name="input_project"></a> [project](#input\_project) | n/a | <pre>object({<br/>    name        = string<br/>    environment = string<br/>    provider    = string<br/>    responsible = string<br/>  })</pre> | n/a | yes |
 
 ## Outputs

@@ -38,7 +38,7 @@ No modules.
 | Name | Description | Type | Default | Required |
 | ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_api_gateway"></a> [api\_gateway](#input\_api\_gateway) | n/a | <pre>object({<br/>    execution_arn = string<br/>    id            = string<br/>  })</pre> | n/a | yes |
-| <a name="input_lambda"></a> [lambda](#input\_lambda) | n/a | <pre>object({<br/>    name        = string,<br/>    output      = string<br/>    source      = string<br/>    description = string<br/>    memory      = string<br/>    timeout     = string<br/>    runtime     = string<br/>    handler     = string<br/>    http = object({<br/>      method = string<br/>      path   = string<br/>    })<br/>  })</pre> | n/a | yes |
+| <a name="input_lambda"></a> [lambda](#input\_lambda) | n/a | <pre>object({<br/>    name        = string,<br/>    output      = string<br/>    source      = string<br/>    description = string<br/>    memory      = string<br/>    timeout     = string<br/>    runtime     = string<br/>    handler     = string<br/>    http = object({<br/>      method = string<br/>      path   = string<br/>    })<br/>    layers       = list(string)<br/>    environments = map(string)<br/>  })</pre> | n/a | yes |
 | <a name="input_project"></a> [project](#input\_project) | n/a | <pre>object({<br/>    name        = string,<br/>    environment = string,<br/>    provider    = string,<br/>    responsible = string<br/>  })</pre> | n/a | yes |
 
 ## Outputs

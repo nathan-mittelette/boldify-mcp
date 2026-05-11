@@ -38,7 +38,8 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::get(|| async { axum::Json(serde_json::json!({ "status": "up" })) }),
         )
         .nest_service("/mcp", service);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    let port = std::env::var("AWS_LWA_PORT").unwrap_or_else(|_| "3000".to_string());
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     axum::serve(listener, router)
         .with_graceful_shutdown(async {
             tokio::signal::ctrl_c().await.unwrap();
