@@ -2,3 +2,9 @@
 name = "boldify-mcp"
 transport = "stdio"
 command = "/Users/axopen/Perso/Developer/boldify-mcp/target/release/mcp"
+
+[[mcp_servers]]
+name = "boldify-mcp-http"
+transport = "http"
+url = "https://api.boldify.net/mcp"
+disabled = false

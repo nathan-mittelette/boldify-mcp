@@ -32,7 +32,14 @@ async fn main() -> anyhow::Result<()> {
         StreamableHttpServerConfig::default(),
     );
 
-    let router = axum::Router::new().nest_service("/mcp", service);
+    let router = axum::Router::new()
+        .route(
+            "/health",
+            axum::routing::get(|| async {
+                axum::Json(serde_json::json!({ "status": "up" }))
+            }),
+        )
+        .nest_service("/mcp", service);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
     axum::serve(listener, router)
         .with_graceful_shutdown(async {

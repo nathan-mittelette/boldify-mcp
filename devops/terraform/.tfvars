@@ -67,5 +67,6 @@ lambdas = [{
       AWS_LAMBDA_EXEC_WRAPPER : "/opt/bootstrap"
       AWS_LWA_ENABLE_COMPRESSION : "true"
       AWS_LWA_PORT : "3000"
+      AWS_LWA_READINESS_CHECK_PATH : "/health"
     }
 }]
