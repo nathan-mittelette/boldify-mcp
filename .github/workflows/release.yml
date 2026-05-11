@@ -97,7 +97,6 @@ jobs:
 
   deploy:
     name: Deploy to AWS Lambda
-    needs: release
     runs-on: ubuntu-latest
 
     steps:
