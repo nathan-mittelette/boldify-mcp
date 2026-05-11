@@ -29,7 +29,9 @@ async fn main() -> anyhow::Result<()> {
     let service = StreamableHttpService::new(
         || Ok(BoldifyServer::new()),
         LocalSessionManager::default().into(),
-        StreamableHttpServerConfig::default().disable_allowed_hosts(),
+        StreamableHttpServerConfig::default()
+            .disable_allowed_hosts()
+            .with_stateful_mode(true),
     );
 
     let router = axum::Router::new()
