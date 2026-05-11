@@ -1,0 +1,65 @@
+project = {
+  name        = "boldify-mcp",
+  environment = "prod",
+  responsible = "mittelette.nathan@gmail.com"
+  provider    = "opentofu"
+}
+
+api_gateway = {
+  cors = {
+    allow_headers = ["*"],
+    allow_origins = ["*"],
+    allow_methods = ["OPTIONS", "GET"]
+  },
+  log = {
+    retention = 30
+  }
+}
+
+dns = {
+  root_domain = "boldify.net"
+  domain_name = "api.boldify.net"
+}
+
+lambdas = [{
+  name        = "api-convert"
+  description = "Lambda to convert HTML or Markdown to ASCII formatted text"
+  handler     = "index.handler",
+  memory      = "128",
+  timeout     = "30",
+  runtime     = "provided.al2023",
+  source      = "build/api-convert"
+  output      = "build"
+  http = {
+    method = "POST"
+    path   = "/api/convert"
+  }
+  },
+  {
+    name        = "api-syntaxes"
+    description = "Lambda to get HTML or Markdown syntaxes"
+    handler     = "index.handler",
+    memory      = "128",
+    timeout     = "30",
+    runtime     = "provided.al2023",
+    source      = "build/api-syntaxes"
+    output      = "build"
+    http = {
+      method = "GET"
+      path   = "/api/syntaxes"
+    }
+  },
+  {
+    name        = "mcp-http"
+    description = "MCP"
+    handler     = "index.handler",
+    memory      = "128",
+    timeout     = "30",
+    runtime     = "provided.al2023",
+    source      = "build/mcp-http"
+    output      = "build"
+    http = {
+      method = "ANY"
+      path   = "/mcp"
+    }
+}]

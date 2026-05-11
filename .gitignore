@@ -16,3 +16,9 @@ target/
 
 # Environment
 .env
+
+# Build directory
+build
+
+# Terraform (Open Tofu)
+.terraform

@@ -1,7 +1,0 @@
-{
-  "mcpServers": {
-    "boldify-mcp": {
-      "command": "/Users/axopen/Perso/Developer/boldify-mcp/target/release/mcp"
-    }
-  }
-}

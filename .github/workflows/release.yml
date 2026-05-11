@@ -94,3 +94,53 @@ jobs:
         with:
           files: boldify-mcp-*
           generate_release_notes: true
+
+  deploy:
+    name: Deploy to AWS Lambda
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ubuntu-cargo-lambda-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ubuntu-cargo-lambda-
+
+      - name: Build Lambda binaries
+        run: cargo build --workspace --features mcp/http --release --target x86_64-unknown-linux-gnu
+
+      - name: Prepare build directory with bootstrap binaries
+        run: |
+          mkdir -p build/api-convert build/api-syntaxes
+          cp target/x86_64-unknown-linux-gnu/release/api-convert build/api-convert/bootstrap
+          cp target/x86_64-unknown-linux-gnu/release/api-syntaxes build/api-syntaxes/bootstrap
+          cp target/x86_64-unknown-linux-gnu/release/mcp build/mcp-http/bootstrap
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+
+      - name: Deploy infrastructure
+        working-directory: devops/terraform
+        run: |
+          tofu init
+          tofu apply --var-file .tfvars -auto-approve
