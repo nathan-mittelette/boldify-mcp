@@ -59,14 +59,8 @@ lambdas = [{
     source      = "build/mcp-http"
     output      = "build"
     https = [{
-      method = "ANY"
+      method = "POST"
       path   = "/mcp"
-      }, {
-      method = "ANY",
-      path   = "/mcp/{proxy+}"
-      }, {
-      method = "GET",
-      path   = "/health"
     }]
     layers = ["arn:aws:lambda:eu-west-1:753240598075:layer:LambdaAdapterLayerX86:23"]
     environments = {
