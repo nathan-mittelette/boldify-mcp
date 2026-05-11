@@ -77,26 +77,11 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
 
-  release:
-    name: Create GitHub Release
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: boldify-mcp-*
-          merge-multiple: true
-
-      - name: Create release and upload assets
-        uses: softprops/action-gh-release@v2
-        with:
-          files: boldify-mcp-*
-          generate_release_notes: true
-
   deploy:
     name: Deploy to AWS Lambda
+    environment:
+      name: aws
+      url: "https://api.boldify.net"
     runs-on: ubuntu-latest
 
     steps:
@@ -123,7 +108,7 @@ jobs:
 
       - name: Prepare build directory with bootstrap binaries
         run: |
-          mkdir -p build/api-convert build/api-syntaxes
+          mkdir -p build/api-convert build/api-syntaxes build/mcp-http
           cp target/x86_64-unknown-linux-gnu/release/api-convert build/api-convert/bootstrap
           cp target/x86_64-unknown-linux-gnu/release/api-syntaxes build/api-syntaxes/bootstrap
           cp target/x86_64-unknown-linux-gnu/release/mcp build/mcp-http/bootstrap
@@ -143,3 +128,23 @@ jobs:
         run: |
           tofu init
           tofu apply --var-file .tfvars -auto-approve
+
+  release:
+    name: Create GitHub Release
+    needs:
+      - build
+      - deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: boldify-mcp-*
+          merge-multiple: true
+
+      - name: Create release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: boldify-mcp-*
+          generate_release_notes: true
