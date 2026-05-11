@@ -31,7 +31,8 @@ async fn main() -> anyhow::Result<()> {
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .disable_allowed_hosts()
-            .with_stateful_mode(true),
+            .with_stateful_mode(false)
+            .with_json_response(true),
     );
 
     let router = axum::Router::new()

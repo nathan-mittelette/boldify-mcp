@@ -74,6 +74,6 @@ lambdas = [{
       AWS_LWA_ENABLE_COMPRESSION : "true"
       AWS_LWA_PORT : "8080"
       AWS_LWA_READINESS_CHECK_PATH : "/health"
-      AWS_LWA_INVOKE_MODE : "response_stream"
+      AWS_LWA_INVOKE_MODE : "buffered"
     }
 }]
