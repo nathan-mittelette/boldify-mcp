@@ -35,9 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let router = axum::Router::new()
         .route(
             "/health",
-            axum::routing::get(|| async {
-                axum::Json(serde_json::json!({ "status": "up" }))
-            }),
+            axum::routing::get(|| async { axum::Json(serde_json::json!({ "status": "up" })) }),
         )
         .nest_service("/mcp", service);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
