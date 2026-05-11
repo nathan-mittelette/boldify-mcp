@@ -52,7 +52,7 @@ lambdas = [{
   {
     name        = "mcp-http"
     description = "MCP"
-    handler     = "index.handler",
+    handler     = "bootstrap",
     memory      = "128",
     timeout     = "30",
     runtime     = "provided.al2023",
@@ -61,5 +61,11 @@ lambdas = [{
     http = {
       method = "ANY"
       path   = "/mcp"
+    }
+    layers = ["arn:aws:lambda:eu-west-1:753240598075:layer:LambdaAdapterLayerX86:23"]
+    environments = {
+      AWS_LAMBDA_EXEC_WRAPPER : "/opt/bootstrap"
+      AWS_LWA_ENABLE_COMPRESSION : "true"
+      AWS_LWA_PORT : "3000"
     }
 }]

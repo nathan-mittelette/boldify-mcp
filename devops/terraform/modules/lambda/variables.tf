@@ -21,6 +21,8 @@ variable "lambda" {
       method = string
       path   = string
     })
+    layers       = list(string)
+    environments = map(string)
   })
 }
 

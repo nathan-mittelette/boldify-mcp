@@ -41,5 +41,7 @@ variable "lambdas" {
       method = string
       path   = string
     })
+    layers       = optional(list(string), [])
+    environments = optional(map(string), {})
   }))
 }

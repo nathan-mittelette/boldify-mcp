@@ -10,7 +10,10 @@ resource "aws_lambda_function" "lambda" {
   tracing_config {
     mode = "Active"
   }
-  layers           = ["arn:aws:lambda:eu-west-1:580247275435:layer:LambdaInsightsExtension:53"]
+  layers           = concat(["arn:aws:lambda:eu-west-1:580247275435:layer:LambdaInsightsExtension:53"], var.lambda.layers)
   source_code_hash = filebase64sha256(data.archive_file.lambda_zip.output_path)
   runtime          = var.lambda.runtime
+  environment {
+    variables = var.lambda.environments
+  }
 }
