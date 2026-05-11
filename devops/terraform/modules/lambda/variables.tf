@@ -17,10 +17,10 @@ variable "lambda" {
     timeout     = string
     runtime     = string
     handler     = string
-    http = object({
+    https = list(object({
       method = string
       path   = string
-    })
+    }))
     layers       = list(string)
     environments = map(string)
   })

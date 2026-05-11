@@ -30,10 +30,10 @@ lambdas = [{
   runtime     = "provided.al2023",
   source      = "build/api-convert"
   output      = "build"
-  http = {
+  https = [{
     method = "POST"
     path   = "/api/convert"
-  }
+  }]
   },
   {
     name        = "api-syntaxes"
@@ -44,10 +44,10 @@ lambdas = [{
     runtime     = "provided.al2023",
     source      = "build/api-syntaxes"
     output      = "build"
-    http = {
+    https = [{
       method = "GET"
       path   = "/api/syntaxes"
-    }
+    }]
   },
   {
     name        = "mcp-http"
@@ -58,10 +58,16 @@ lambdas = [{
     runtime     = "provided.al2023",
     source      = "build/mcp-http"
     output      = "build"
-    http = {
+    https = [{
       method = "ANY"
       path   = "/mcp"
-    }
+      }, {
+      method = "ANY",
+      path   = "/mcp/{proxy+}"
+      }, {
+      method = "GET",
+      path   = "/health"
+    }]
     layers = ["arn:aws:lambda:eu-west-1:753240598075:layer:LambdaAdapterLayerX86:23"]
     environments = {
       AWS_LAMBDA_EXEC_WRAPPER : "/opt/bootstrap"

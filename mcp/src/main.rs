@@ -35,7 +35,10 @@ async fn main() -> anyhow::Result<()> {
     let router = axum::Router::new()
         .route(
             "/health",
-            axum::routing::get(|| async { axum::Json(serde_json::json!({ "status": "up" })) }),
+            axum::routing::get(|| async {
+                println!("Health check called");
+                axum::Json(serde_json::json!({ "status": "up" }))
+            }),
         )
         .nest_service("/mcp", service);
     let port = std::env::var("AWS_LWA_PORT").unwrap_or_else(|_| "3000".to_string());

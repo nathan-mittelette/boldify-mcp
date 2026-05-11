@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "boldify": {
+      "url": "http://localhost:3000/mcp"
+    },
+    "boldify-prod": {
+      "url": "https://api.boldify.net/mcp"
+    }
+  }
+}
