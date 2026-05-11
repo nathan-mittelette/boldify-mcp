@@ -9,7 +9,7 @@ api_gateway = {
   cors = {
     allow_headers = ["*"],
     allow_origins = ["*"],
-    allow_methods = ["OPTIONS", "GET"]
+    allow_methods = ["OPTIONS", "GET", "POST", "DELETE", "PUT"]
   },
   log = {
     retention = 30

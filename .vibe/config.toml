@@ -1,15 +1,16 @@
 [[mcp_servers]]
 name = "boldify-mcp-local"
 transport = "http"
-command = "http://localhost:3000/mcp"
+url = "http://localhost:3000/mcp"
 
 [[mcp_servers]]
 name = "boldify-mcp-prod"
 transport = "http"
-url = "https://api.boldify.net/mcp"
+url = "https://tzzmabgke46hc4xpfntkgc4tru0rlggf.lambda-url.eu-west-1.on.aws/mcp"
 disabled = false
 
 [tools.bash]
 allowlist = [
+    "find",
     "grep *",
 ]
