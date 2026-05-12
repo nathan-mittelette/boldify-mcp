@@ -119,6 +119,16 @@ fn parse_inline_inner(
             .next()
             .expect("char boundary must point to a character");
 
+        // Backslash escape: \X produces X literally (e.g. \# \* \~ \\ )
+        if c == '\\' {
+            if let Some(next) = input[i + 1..].chars().next() {
+                current_text.push(next);
+                i += 1 + next.len_utf8();
+                char_offset += 2;
+                continue;
+            }
+        }
+
         if is_unsupported_symbol(c) {
             return Err(ParseError::UnsupportedSymbol {
                 symbol: extract_symbol(input, i),
@@ -182,7 +192,7 @@ fn detect_marker(s: &str) -> Option<(&'static str, ContainerType)> {
 }
 
 fn is_unsupported_symbol(c: char) -> bool {
-    matches!(c, '#' | '`' | '[' | ']' | '<' | '>' | '(' | ')' | '{' | '}')
+    matches!(c, '`' | '[' | ']' | '<' | '>')
 }
 
 fn extract_symbol(s: &str, from: usize) -> String {
@@ -195,5 +205,117 @@ fn extract_symbol(s: &str, from: usize) -> String {
             .next()
             .map(|c| c.to_string())
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::id::NodeIdGen;
+
+    use super::*;
+
+    fn parse(input: &str) -> Vec<InlineNode> {
+        parse_inline(input, 1, 0, 1, &mut NodeIdGen::new()).unwrap()
+    }
+
+    fn text_content(nodes: &[InlineNode]) -> String {
+        fn collect(nodes: &[InlineNode], buf: &mut String) {
+            for node in nodes {
+                match node {
+                    InlineNode::Text(t) => buf.push_str(&t.text),
+                    InlineNode::Container(c) => collect(&c.children, buf),
+                    InlineNode::ListItem(li) => collect(&li.children, buf),
+                }
+            }
+        }
+        let mut buf = String::new();
+        collect(nodes, &mut buf);
+        buf
+    }
+
+    // ── Échappement backslash ────────────────────────────────────────────────
+
+    #[test]
+    fn backslash_diese_produit_diese_litteral() {
+        let nodes = parse(r"\#hashtag");
+        assert_eq!(text_content(&nodes), "#hashtag");
+    }
+
+    #[test]
+    fn backslash_etoile_produit_etoile_litterale() {
+        let nodes = parse(r"\*pas italique\*");
+        assert_eq!(text_content(&nodes), "*pas italique*");
+    }
+
+    #[test]
+    fn backslash_double_etoile_premier_echappe_second_ouvre_gras() {
+        // \** → '*' littéral puis '*' ouvre l'italique → pas fermé → erreur
+        let result = parse_inline(r"\**gras", 1, 0, 1, &mut NodeIdGen::new());
+        // Le premier * est échappé, le second ouvre un marqueur non fermé
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn backslash_tilde_produit_tilde_litteral() {
+        let nodes = parse(r"\~~pas barré\~~");
+        assert_eq!(text_content(&nodes), "~~pas barré~~");
+    }
+
+    #[test]
+    fn backslash_backslash_produit_backslash_litteral() {
+        let nodes = parse(r"\\");
+        assert_eq!(text_content(&nodes), "\\");
+    }
+
+    #[test]
+    fn backslash_en_fin_de_chaine_produit_backslash() {
+        // Un \ seul en fin de chaîne : pas de caractère suivant → traité comme texte
+        let nodes = parse("texte\\");
+        assert_eq!(text_content(&nodes), "texte\\");
+    }
+
+    #[test]
+    fn backslash_echappe_crochet_ouvrant() {
+        let nodes = parse(r"\[pas un lien");
+        assert_eq!(text_content(&nodes), "[pas un lien");
+    }
+
+    #[test]
+    fn backslash_dans_gras_echappe_etoile() {
+        // **avant \* après** → bold contient "avant * après"
+        let nodes = parse(r"**avant \* après**");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], InlineNode::Container(c) if c.container_type == ContainerType::Bold)
+        );
+        assert_eq!(text_content(&nodes), "avant * après");
+    }
+
+    // ── Caractères désormais autorisés ───────────────────────────────────────
+
+    #[test]
+    fn parentheses_autorisees_dans_texte() {
+        let nodes = parse("voir (ci-dessous)");
+        assert_eq!(text_content(&nodes), "voir (ci-dessous)");
+    }
+
+    #[test]
+    fn accolades_autorisees_dans_texte() {
+        let nodes = parse("valeur={true}");
+        assert_eq!(text_content(&nodes), "valeur={true}");
+    }
+
+    // ── Symboles toujours interdits ──────────────────────────────────────────
+
+    #[test]
+    fn backtick_toujours_interdit() {
+        let result = parse_inline("`code`", 1, 0, 1, &mut NodeIdGen::new());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn crochet_ouvrant_toujours_interdit() {
+        let result = parse_inline("[lien]", 1, 0, 1, &mut NodeIdGen::new());
+        assert!(result.is_err());
     }
 }

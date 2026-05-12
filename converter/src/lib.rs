@@ -12,12 +12,9 @@ pub use handlers::{
 };
 
 /// Converts a list of root AST nodes to a Unicode-formatted String.
+/// All line breaks are encoded directly by the parsers — no separator is added here.
 pub fn convert(nodes: &[ContainerNode]) -> String {
-    nodes
-        .iter()
-        .map(|n| n.to_unicode())
-        .collect::<Vec<_>>()
-        .join("\n")
+    nodes.iter().map(|n| n.to_unicode()).collect()
 }
 
 #[cfg(test)]
@@ -41,8 +38,8 @@ mod tests {
     }
 
     #[test]
-    fn convert_plusieurs_nodes_joint_avec_newline() {
-        let n1 = make_container(ContainerType::Text, vec![make_text("ligne 1")]);
+    fn convert_concatene_les_nodes_sans_separateur() {
+        let n1 = make_container(ContainerType::Text, vec![make_text("ligne 1\n")]);
         let n2 = make_container(ContainerType::Text, vec![make_text("ligne 2")]);
         let result = convert(&[n1, n2]);
         assert!(result.contains("ligne 1\nligne 2"));

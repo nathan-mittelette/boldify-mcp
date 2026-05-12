@@ -1,5 +1,5 @@
 use crate::{
-    ast::{ContainerNode, ContainerType, InlineNode, ListItemNode, NodeBase, Span},
+    ast::{ContainerNode, ContainerType, InlineNode, ListItemNode, NodeBase, Span, TextNode},
     error::{ParseError, SourcePosition},
     id::NodeIdGen,
     inline::parse_inline,
@@ -24,19 +24,46 @@ impl Parser for MarkdownParser {
         let mut id_gen = NodeIdGen::new();
         let mut i = 0;
 
+        // pending_newlines tracks how many \n to insert before the next content node:
+        // - 1 after each content line (normal line break)
+        // - +1 for each blank line (producing \n\n for a blank-separated block)
+        // On the very first content node nothing is prepended.
+        let mut pending_newlines: usize = 0;
+        let mut first_node = true;
+
         while i < lines.len() {
             let line = &lines[i];
             if line.text.trim().is_empty() {
+                // Each blank line adds one extra \n (beyond the normal post-line \n)
+                if !first_node {
+                    pending_newlines += 1;
+                }
                 i += 1;
                 continue;
             }
 
             let (trimmed_start, trimmed) = trim_line_start(line.text);
 
+            // # is only a heading when followed by a space or end of line.
+            // A bare #word (hashtag) is treated as plain text.
             if trimmed.starts_with('#') {
-                let hashes: String = trimmed.chars().take_while(|&c| c == '#').collect();
+                let after = trimmed.trim_start_matches('#');
+                if after.is_empty() || after.starts_with(' ') {
+                    let hashes: String = trimmed.chars().take_while(|&c| c == '#').collect();
+                    return Err(ParseError::UnsupportedSymbol {
+                        symbol: hashes,
+                        position: SourcePosition {
+                            line: line.number,
+                            column: column_at(line.text, trimmed_start),
+                            byte_offset: line.start + trimmed_start,
+                        },
+                    });
+                }
+            }
+
+            if trimmed.starts_with('>') {
                 return Err(ParseError::UnsupportedSymbol {
-                    symbol: hashes,
+                    symbol: ">".into(),
                     position: SourcePosition {
                         line: line.number,
                         column: column_at(line.text, trimmed_start),
@@ -45,22 +72,12 @@ impl Parser for MarkdownParser {
                 });
             }
 
-            if let Some((rest, content_offset)) = try_strip_blockquote_prefix(line.text) {
-                let children = parse_inline(
-                    rest,
-                    line.number,
-                    line.start + content_offset,
-                    column_at(line.text, content_offset),
-                    &mut id_gen,
-                )?;
-                nodes.push(ContainerNode {
-                    base: NodeBase::new(id_gen.next_id(), Span::new(line.start, line.end)),
-                    container_type: ContainerType::Blockquote,
-                    children,
-                });
-                i += 1;
-                continue;
+            // Push accumulated \n nodes before this content node
+            if !first_node {
+                push_newline_nodes(pending_newlines, &mut nodes, &mut id_gen);
             }
+            pending_newlines = 1; // default: one \n after this line
+            first_node = false;
 
             if let Some((bullet, _, list_start_offset)) = try_strip_unordered_prefix(line.text) {
                 let list_start = line.start + list_start_offset;
@@ -181,11 +198,6 @@ impl Parser for MarkdownParser {
                 example: "==texte surligné==".into(),
             },
             crate::SupportedSymbol {
-                symbol: "> ".into(),
-                description: "Citation".into(),
-                example: "> une citation".into(),
-            },
-            crate::SupportedSymbol {
                 symbol: "- ".into(),
                 description: "Liste non ordonnée".into(),
                 example: "- item de liste".into(),
@@ -234,12 +246,6 @@ fn column_at(line: &str, byte_offset: usize) -> usize {
     line[..byte_offset].chars().count() + 1
 }
 
-fn try_strip_blockquote_prefix(line: &str) -> Option<(&str, usize)> {
-    let (trimmed_start, trimmed) = trim_line_start(line);
-    let rest = trimmed.strip_prefix("> ")?;
-    Some((rest, trimmed_start + 2))
-}
-
 fn try_strip_unordered_prefix(line: &str) -> Option<(char, &str, usize)> {
     let (trimmed_start, trimmed) = trim_line_start(line);
     if let Some(rest) = trimmed.strip_prefix("- ") {
@@ -266,6 +272,19 @@ fn build_list_item(
         ),
         children,
     })
+}
+
+fn push_newline_nodes(count: usize, nodes: &mut Vec<ContainerNode>, id_gen: &mut NodeIdGen) {
+    for _ in 0..count {
+        nodes.push(ContainerNode {
+            base: NodeBase::new(id_gen.next_id(), Span::new(0, 0)),
+            container_type: ContainerType::Text,
+            children: vec![InlineNode::Text(TextNode {
+                base: NodeBase::new(id_gen.next_id(), Span::new(0, 0)),
+                text: "\n".to_string(),
+            })],
+        });
+    }
 }
 
 fn try_strip_ordered_prefix(line: &str) -> Option<(&str, usize)> {
@@ -395,11 +414,11 @@ mod tests {
     }
 
     #[test]
-    fn blockquote_produit_container_blockquote() {
-        let result = MarkdownParser.parse("> citation").unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].container_type, ContainerType::Blockquote);
-        assert_eq!(extract_text(&result), "citation");
+    fn citation_produit_erreur_unsupported() {
+        let result = MarkdownParser.parse("> citation");
+        assert!(
+            matches!(result, Err(ParseError::UnsupportedSymbol { symbol, .. }) if symbol == ">")
+        );
     }
 
     #[test]
@@ -475,7 +494,7 @@ mod tests {
 
     #[test]
     fn erreur_contient_position_precise() {
-        let result = MarkdownParser.parse("Hello # monde");
+        let result = MarkdownParser.parse("Hello `code`");
         if let Err(ParseError::UnsupportedSymbol { position, .. }) = result {
             assert_eq!(position.line, 1);
             assert!(position.column > 1);
@@ -507,7 +526,8 @@ mod tests {
     #[test]
     fn supported_symbols_retourne_8_entrees() {
         let symbols = MarkdownParser.supported_symbols();
-        assert_eq!(symbols.len(), 9);
+        assert_eq!(symbols.len(), 8);
+        assert!(!symbols.iter().any(|symbol| symbol.symbol == "> "));
     }
 
     // Tests avancés - Emojis
@@ -567,40 +587,52 @@ mod tests {
     fn deux_paragraphes_produisent_deux_containers() {
         let input = "Première ligne\nDeuxième ligne";
         let result = MarkdownParser.parse(input).unwrap();
-        assert_eq!(result.len(), 2);
+        // text + \n node + text = 3 nodes
+        assert_eq!(result.len(), 3);
     }
 
     #[test]
     fn paragraphe_suivi_de_liste() {
         let input = "Introduction\n- item A\n- item B";
         let result = MarkdownParser.parse(input).unwrap();
-        assert_eq!(result.len(), 2);
+        // text + \n node + list = 3 nodes
+        assert_eq!(result.len(), 3);
         assert_eq!(result[0].container_type, ContainerType::Text);
-        assert_eq!(result[1].container_type, ContainerType::List);
+        assert_eq!(result[2].container_type, ContainerType::List);
     }
 
     #[test]
     fn liste_suivie_de_texte() {
         let input = "- item A\n- item B\nConclusion";
         let result = MarkdownParser.parse(input).unwrap();
-        assert_eq!(result.len(), 2);
+        // list + \n node + text = 3 nodes
+        assert_eq!(result.len(), 3);
         assert_eq!(result[0].container_type, ContainerType::List);
-        assert_eq!(result[1].container_type, ContainerType::Text);
+        assert_eq!(result[2].container_type, ContainerType::Text);
     }
 
     #[test]
-    fn blockquote_entre_deux_paragraphes() {
+    fn citation_entre_deux_paragraphes_produit_erreur() {
         let input = "Intro\n> Une pensée\nConclusion";
-        let result = MarkdownParser.parse(input).unwrap();
-        assert_eq!(result.len(), 3);
-        assert_eq!(result[1].container_type, ContainerType::Blockquote);
+        let result = MarkdownParser.parse(input);
+        assert!(
+            matches!(result, Err(ParseError::UnsupportedSymbol { symbol, .. }) if symbol == ">")
+        );
     }
 
     #[test]
     fn lignes_vides_entre_blocs_ignorees() {
         let input = "Paragraphe 1\n\n\nParagraphe 2";
         let result = MarkdownParser.parse(input).unwrap();
-        assert_eq!(result.len(), 2);
+        // \n nodes have a single Text child containing "\n" — exclude them
+        let content_nodes: Vec<_> = result
+            .iter()
+            .filter(|n| match n.children.as_slice() {
+                [InlineNode::Text(t)] => t.text != "\n",
+                _ => !n.children.is_empty(),
+            })
+            .collect();
+        assert_eq!(content_nodes.len(), 2);
     }
 
     #[test]
@@ -775,30 +807,28 @@ mod tests {
     }
 
     #[test]
-    fn post_linkedin_citation_et_liste() {
+    fn post_linkedin_citation_et_liste_produit_erreur() {
         let input = "\n> \"Le code propre n'est pas écrit en suivant un ensemble de règles.\"\n\nMes 3 principes :\n\n1. Nommer les choses clairement\n2. Faire une chose à la fois\n3. Tester avant de déployer 🚀";
 
-        let result = MarkdownParser.parse(input).unwrap();
-        assert!(result.len() >= 3);
-        assert_eq!(result[0].container_type, ContainerType::Blockquote);
-        let last = result.last().unwrap();
-        assert_eq!(last.container_type, ContainerType::OrderedList);
+        let result = MarkdownParser.parse(input);
+        assert!(
+            matches!(result, Err(ParseError::UnsupportedSymbol { symbol, .. }) if symbol == ">")
+        );
     }
 
     #[test]
-    fn post_linkedin_long_avec_tous_les_styles() {
-        let input = "\n🚀 **3 ans de freelance : ce que personne ne vous dit**\n\nQuand j'ai commencé, je pensais que la technique était le plus dur.\nJ'avais *complètement* tort.\n\nVoici ce que j'ai vraiment appris :\n\n- **Trouver des clients** est un métier à part entière\n- La facturation, ~~personne~~ vraiment personne ne vous apprend ça\n- ==Votre réputation== vaut plus que n'importe quel CV\n- *La solitude* du freelance est réelle 🧘\n\n> \"Votre réseau est votre filet de sécurité.\"\n\n**Et vous, qu'est-ce qui vous a le plus surpris ?** 👇";
+    fn post_linkedin_long_avec_styles_et_liste() {
+        let input = "\n🚀 **3 ans de freelance : ce que personne ne vous dit**\n\nQuand j'ai commencé, je pensais que la technique était le plus dur.\nJ'avais *complètement* tort.\n\nVoici ce que j'ai vraiment appris :\n\n- **Trouver des clients** est un métier à part entière\n- La facturation, ~~personne~~ vraiment personne ne vous apprend ça\n- ==Votre réputation== vaut plus que n'importe quel CV\n- *La solitude* du freelance est réelle 🧘\n\n**Et vous, qu'est-ce qui vous a le plus surpris ?** 👇";
 
         let result = MarkdownParser.parse(input).unwrap();
         assert!(
-            result.len() >= 5,
-            "Attendu au moins 5 blocs, obtenu {}",
+            result.len() >= 4,
+            "Attendu au moins 4 blocs, obtenu {}",
             result.len()
         );
 
         let types: Vec<&ContainerType> = result.iter().map(|n| &n.container_type).collect();
         assert!(types.contains(&&ContainerType::List));
-        assert!(types.contains(&&ContainerType::Blockquote));
     }
 
     #[test]
@@ -853,7 +883,8 @@ mod tests {
         let result = MarkdownParser.parse("ligne1\r\nligne2");
         assert!(result.is_ok());
         let nodes = result.unwrap();
-        assert_eq!(nodes.len(), 2);
+        // text + \n node + text = 3 nodes
+        assert_eq!(nodes.len(), 3);
     }
 
     #[test]
@@ -875,16 +906,11 @@ mod tests {
     }
 
     #[test]
-    fn blockquote_avec_style_inline() {
-        let result = MarkdownParser
-            .parse("> **Citation importante** de quelqu'un")
-            .unwrap();
-        let bq = &result[0];
-        assert_eq!(bq.container_type, ContainerType::Blockquote);
-        let has_bold = bq.children.iter().any(
-            |n| matches!(n, InlineNode::Container(c) if c.container_type == ContainerType::Bold),
+    fn citation_avec_style_inline_produit_erreur() {
+        let result = MarkdownParser.parse("> **Citation importante** de quelqu'un");
+        assert!(
+            matches!(result, Err(ParseError::UnsupportedSymbol { symbol, .. }) if symbol == ">")
         );
-        assert!(has_bold);
     }
 
     #[test]

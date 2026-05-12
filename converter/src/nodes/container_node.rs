@@ -31,19 +31,21 @@ impl ToUnicode for ContainerNode {
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
-            ContainerType::OrderedList => self
-                .children
-                .iter()
-                .enumerate()
-                .filter_map(|(i, n)| {
-                    if let InlineNode::ListItem(li) = n {
-                        Some(format!("{}. {}", i + 1, li.to_unicode()))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
+            ContainerType::OrderedList => {
+                let mut counter = 0usize;
+                self.children
+                    .iter()
+                    .filter_map(|n| {
+                        if let InlineNode::ListItem(li) = n {
+                            counter += 1;
+                            Some(format!("{}. {}", counter, li.to_unicode()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
         }
     }
 }
@@ -303,7 +305,6 @@ mod tests {
         assert!(result.contains(" et "));
         assert!(!result.contains("gras"));
         assert!(!result.contains("italique"));
-        assert!(result.contains("surligné"));
-        assert!(result.contains('〚'));
+        assert!(result.contains('\u{0305}'));
     }
 }

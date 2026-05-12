@@ -38,7 +38,7 @@ mcp (binary, CLI or HTTP) / api-convert / api-syntaxes (Lambda binaries)
         └── converter (AST → Unicode text)
 ```
 
-**parser** — Parses input into an AST. Rejects unsupported constructs (headings, code blocks, tables) with `ParseError::UnsupportedSymbol`. Supported inputs: Markdown (`**bold**`, `*italic*`, `~~strike~~`, `==highlight==`, `>`, `-`, numbered lists) and HTML (`<b>`, `<strong>`, `<i>`, `<em>`, `<u>`, `<mark>`, `<s>`, `<del>`, `<blockquote>`, `<ul>`, `<ol>`, `<li>`, `<p>`, `<br>`).
+**parser** — Parses input into an AST. Rejects unsupported constructs (headings, code blocks, tables, citations) with `ParseError::UnsupportedSymbol`. Supported inputs: Markdown (`**bold**`, `*italic*`, `~~strike~~`, `==highlight==`, `-`, numbered lists) and HTML (`<b>`, `<strong>`, `<i>`, `<em>`, `<u>`, `<mark>`, `<s>`, `<del>`, `<ul>`, `<ol>`, `<li>`, `<p>`, `<br>`).
 
 **converter** — Implements the `ToUnicode` trait on each AST node type to produce Unicode output. Font handlers are in `converter/src/handlers/`, node dispatch in `converter/src/nodes/`. Supports 60+ accented characters across 12+ languages.
 

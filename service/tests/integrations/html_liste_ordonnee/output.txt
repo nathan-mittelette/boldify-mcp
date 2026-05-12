@@ -1,0 +1,4 @@
+𝗠𝗲𝘀 𝟯 𝗽𝗿𝗶𝗻𝗰𝗶𝗽𝗲𝘀 :
+1. Nommer les choses clairement
+2. Faire une chose à la fois
+3. Tester avant de déployer

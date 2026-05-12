@@ -57,7 +57,7 @@ api-convert -> Lambda wrapper around service.convert()
 api-syntaxes-> Lambda wrapper around service.list_syntaxes()
 ```
 
-**parser** — Source of truth for supported syntax. Parses Markdown or HTML into `Vec<ContainerNode>` and carries source locations through `Span`, `NodeBase`, and `SourcePosition`. Rejects unsupported constructs (headings, code blocks, tables) with `ParseError::UnsupportedSymbol`. Supported inputs: Markdown (`**bold**`, `*italic*`, `~~strike~~`, `==highlight==`, `>`, `-`, numbered lists) and HTML (`<b>`, `<strong>`, `<i>`, `<em>`, `<u>`, `<mark>`, `<s>`, `<del>`, `<blockquote>`, `<ul>`, `<ol>`, `<li>`, `<p>`, `<br>`).
+**parser** — Source of truth for supported syntax. Parses Markdown or HTML into `Vec<ContainerNode>` and carries source locations through `Span`, `NodeBase`, and `SourcePosition`. Rejects unsupported constructs (headings, code blocks, tables, citations) with `ParseError::UnsupportedSymbol`. Supported inputs: Markdown (`**bold**`, `*italic*`, `~~strike~~`, `==highlight==`, `-`, numbered lists) and HTML (`<b>`, `<strong>`, `<i>`, `<em>`, `<u>`, `<mark>`, `<s>`, `<del>`, `<ul>`, `<ol>`, `<li>`, `<p>`, `<br>`).
 
 **converter** — Owns all Unicode rendering. Style-specific logic lives in `converter/src/handlers/`, and AST-node dispatch lives in `converter/src/nodes/`. Implements the `ToUnicode` trait on each AST node type. Supports 60+ accented characters across 12+ languages. Pattern: shared AST input, handler-per-style, grapheme-aware processing, shared accent decomposition, and whitespace/emoji preservation.
 
