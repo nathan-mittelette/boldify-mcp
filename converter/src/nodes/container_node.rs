@@ -19,32 +19,32 @@ impl ToUnicode for ContainerNode {
             ContainerType::Strikethrough => strikethrough_handler().apply(&raw),
             ContainerType::Surline => surline_handler().apply(&raw),
             ContainerType::Blockquote => format!("❝ {} ❞", raw),
-            ContainerType::List => self
-                .children
-                .iter()
-                .filter_map(|n| {
+            ContainerType::List => {
+                let mut out = String::new();
+                for n in &self.children {
                     if let InlineNode::ListItem(li) = n {
-                        Some(format!("• {}", li.to_unicode()))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-            ContainerType::OrderedList => {
-                let mut counter = 0usize;
-                self.children
-                    .iter()
-                    .filter_map(|n| {
-                        if let InlineNode::ListItem(li) = n {
-                            counter += 1;
-                            Some(format!("{}. {}", counter, li.to_unicode()))
-                        } else {
-                            None
+                        if !out.is_empty() {
+                            out.push('\n');
                         }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n")
+                        out.push_str("• ");
+                        out.push_str(&li.to_unicode());
+                    }
+                }
+                out
+            }
+            ContainerType::OrderedList => {
+                let mut out = String::new();
+                let mut counter = 0usize;
+                for n in &self.children {
+                    if let InlineNode::ListItem(li) = n {
+                        counter += 1;
+                        if counter > 1 {
+                            out.push('\n');
+                        }
+                        out.push_str(&format!("{}. {}", counter, li.to_unicode()));
+                    }
+                }
+                out
             }
         }
     }

@@ -133,7 +133,7 @@ impl Parser for HtmlParser {
         if let Some(unclosed) = stack.last() {
             return Err(ParseError::UnclosedTag {
                 tag: unclosed.tag_name.clone(),
-                position: unclosed.opened_at.clone(),
+                position: unclosed.opened_at,
             });
         }
 

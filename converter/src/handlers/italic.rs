@@ -10,7 +10,7 @@ const BASE_UPPER: u32 = 0x1D608;
 const BASE_LOWER: u32 = 0x1D622;
 
 pub struct ItalicHandler {
-    map: HashMap<String, String>,
+    map: HashMap<char, String>,
 }
 
 impl ItalicHandler {
@@ -20,13 +20,13 @@ impl ItalicHandler {
         for i in 0u32..26 {
             let normal = char::from_u32(b'A' as u32 + i).unwrap();
             let italic = char::from_u32(BASE_UPPER + i).unwrap();
-            map.insert(normal.to_string(), italic.to_string());
+            map.insert(normal, italic.to_string());
         }
 
         for i in 0u32..26 {
             let normal = char::from_u32(b'a' as u32 + i).unwrap();
             let italic = char::from_u32(BASE_LOWER + i).unwrap();
-            map.insert(normal.to_string(), italic.to_string());
+            map.insert(normal, italic.to_string());
         }
 
         // No italic digit variant in Unicode — digits are kept as ASCII.
@@ -38,8 +38,8 @@ impl ItalicHandler {
         ];
         for &c in &accented {
             if let Some((base, combining)) = decompose_accent(c) {
-                if let Some(italic_base) = map.get(&base.to_string()) {
-                    map.insert(c.to_string(), format!("{}{}", italic_base, combining));
+                if let Some(italic_base) = map.get(&base) {
+                    map.insert(c, format!("{}{}", italic_base, combining));
                 }
             }
         }
@@ -57,7 +57,14 @@ pub fn italic_handler() -> &'static ItalicHandler {
 impl FontHandler for ItalicHandler {
     fn apply(&self, text: &str) -> String {
         text.graphemes(true)
-            .map(|g| self.map.get(g).map(|s| s.as_str()).unwrap_or(g))
+            .map(|g| {
+                let mut chars = g.chars();
+                if let (Some(c), None) = (chars.next(), chars.next()) {
+                    self.map.get(&c).map(|s| s.as_str()).unwrap_or(g)
+                } else {
+                    g
+                }
+            })
             .collect()
     }
 }

@@ -11,7 +11,7 @@ const BASE_LOWER: u32 = 0x1D5EE;
 const BASE_DIGIT: u32 = 0x1D7EC;
 
 pub struct BoldHandler {
-    map: HashMap<String, String>,
+    map: HashMap<char, String>,
 }
 
 impl BoldHandler {
@@ -21,19 +21,19 @@ impl BoldHandler {
         for i in 0u32..26 {
             let normal = char::from_u32(b'A' as u32 + i).unwrap();
             let bold = char::from_u32(BASE_UPPER + i).unwrap();
-            map.insert(normal.to_string(), bold.to_string());
+            map.insert(normal, bold.to_string());
         }
 
         for i in 0u32..26 {
             let normal = char::from_u32(b'a' as u32 + i).unwrap();
             let bold = char::from_u32(BASE_LOWER + i).unwrap();
-            map.insert(normal.to_string(), bold.to_string());
+            map.insert(normal, bold.to_string());
         }
 
         for i in 0u32..10 {
             let normal = char::from_u32(b'0' as u32 + i).unwrap();
             let bold = char::from_u32(BASE_DIGIT + i).unwrap();
-            map.insert(normal.to_string(), bold.to_string());
+            map.insert(normal, bold.to_string());
         }
 
         let accented = [
@@ -43,8 +43,8 @@ impl BoldHandler {
         ];
         for &c in &accented {
             if let Some((base, combining)) = decompose_accent(c) {
-                if let Some(bold_base) = map.get(&base.to_string()) {
-                    map.insert(c.to_string(), format!("{}{}", bold_base, combining));
+                if let Some(bold_base) = map.get(&base) {
+                    map.insert(c, format!("{}{}", bold_base, combining));
                 }
             }
         }
@@ -62,7 +62,14 @@ pub fn bold_handler() -> &'static BoldHandler {
 impl FontHandler for BoldHandler {
     fn apply(&self, text: &str) -> String {
         text.graphemes(true)
-            .map(|g| self.map.get(g).map(|s| s.as_str()).unwrap_or(g))
+            .map(|g| {
+                let mut chars = g.chars();
+                if let (Some(c), None) = (chars.next(), chars.next()) {
+                    self.map.get(&c).map(|s| s.as_str()).unwrap_or(g)
+                } else {
+                    g
+                }
+            })
             .collect()
     }
 }
