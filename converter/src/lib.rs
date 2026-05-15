@@ -1,3 +1,8 @@
+//! Converter crate — transforms an AST produced by the parser into Unicode-formatted text.
+//!
+//! Entry point: [`convert`].  Style handlers live in [`handlers`]; AST node
+//! implementations of [`traits::ToUnicode`] live in [`nodes`].
+
 pub mod handlers;
 pub mod nodes;
 pub mod traits;
@@ -38,36 +43,34 @@ mod tests {
     }
 
     #[test]
-    fn convert_concatene_les_nodes_sans_separateur() {
-        let n1 = make_container(ContainerType::Text, vec![make_text("ligne 1\n")]);
-        let n2 = make_container(ContainerType::Text, vec![make_text("ligne 2")]);
+    fn convert_concatenates_nodes_without_separator() {
+        let n1 = make_container(ContainerType::Text, vec![make_text("line 1\n")]);
+        let n2 = make_container(ContainerType::Text, vec![make_text("line 2")]);
         let result = convert(&[n1, n2]);
-        assert!(result.contains("ligne 1\nligne 2"));
+        assert!(result.contains("line 1\nline 2"));
     }
 
     #[test]
-    fn convert_vec_vide_retourne_chaine_vide() {
+    fn convert_empty_vec_returns_empty_string() {
         assert_eq!(convert(&[]), "");
     }
 
-    // ── Tâche 05b ────────────────────────────────────────────────────────────
-
     #[test]
-    fn style_sur_chaine_identique_retourne_toujours_le_meme_resultat() {
+    fn same_style_on_same_input_always_returns_same_result() {
         let r1 = bold_handler().apply("Hello World");
         let r2 = bold_handler().apply("Hello World");
         assert_eq!(r1, r2);
     }
 
     #[test]
-    fn bold_puis_italic_sur_meme_texte_pas_idem() {
+    fn bold_and_italic_on_same_text_differ() {
         let bold = bold_handler().apply("test");
         let italic = italic_handler().apply("test");
         assert_ne!(bold, italic);
     }
 
     #[test]
-    fn convert_post_linkedin_simule() {
+    fn convert_simulated_linkedin_post() {
         let nodes = vec![
             make_container(
                 ContainerType::Text,
@@ -75,7 +78,7 @@ mod tests {
                     make_text("🔥 "),
                     InlineNode::Container(make_container(
                         ContainerType::Bold,
-                        vec![make_text("3 conseils pour progresser")],
+                        vec![make_text("3 tips to improve")],
                     )),
                 ],
             ),
@@ -87,30 +90,30 @@ mod tests {
                         children: vec![
                             InlineNode::Container(make_container(
                                 ContainerType::Bold,
-                                vec![make_text("Lire")],
+                                vec![make_text("Read")],
                             )),
-                            make_text(" tous les jours"),
+                            make_text(" every day"),
                         ],
                     }),
                     InlineNode::ListItem(ListItemNode {
                         base: NodeBase::new(2, Span::new(0, 0)),
                         children: vec![
-                            make_text("Pratiquer "),
+                            make_text("Practice "),
                             InlineNode::Container(make_container(
                                 ContainerType::Italic,
-                                vec![make_text("régulièrement")],
+                                vec![make_text("regularly")],
                             )),
                         ],
                     }),
                     InlineNode::ListItem(ListItemNode {
                         base: NodeBase::new(3, Span::new(0, 0)),
                         children: vec![
-                            make_text("Partager ses "),
+                            make_text("Share your "),
                             InlineNode::Container(make_container(
                                 ContainerType::Strikethrough,
-                                vec![make_text("erreurs")],
+                                vec![make_text("mistakes")],
                             )),
-                            make_text(" apprentissages"),
+                            make_text(" learnings"),
                         ],
                     }),
                 ],
@@ -118,7 +121,7 @@ mod tests {
             make_container(
                 ContainerType::Blockquote,
                 vec![make_text(
-                    "La progression constante bat la perfection occasionnelle.",
+                    "Consistent progress beats occasional perfection.",
                 )],
             ),
         ];
@@ -129,7 +132,7 @@ mod tests {
         assert!(result.contains('\n'));
         assert!(result.contains("• "));
         assert!(result.contains('❝'));
-        assert!(!result.contains("Lire"));
-        assert!(result.contains(" tous les jours"));
+        assert!(!result.contains("Read"));
+        assert!(result.contains(" every day"));
     }
 }

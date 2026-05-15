@@ -27,7 +27,7 @@ async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, E
         Ok(d) => d,
         Err(e) => {
             warn!(error = %e, "invalid JSON body");
-            return error_response("INVALID_JSON", &format!("JSON invalide : {}", e));
+            return error_response("INVALID_JSON", &format!("Invalid JSON: {}", e));
         }
     };
 
@@ -88,7 +88,7 @@ mod tests {
 
         let dto: ConvertRequest = match serde_json::from_slice(&bytes) {
             Ok(d) => d,
-            Err(e) => return error_response("INVALID_JSON", &format!("JSON invalide : {}", e)),
+            Err(e) => return error_response("INVALID_JSON", &format!("Invalid JSON: {}", e)),
         };
 
         match svc.convert(&dto.syntax, &dto.content) {
@@ -107,32 +107,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_convert_valide_retourne_200_avec_result() {
+    async fn post_convert_valid_returns_200_with_result() {
         let svc = MockSvc {
-            result: Ok("𝗕𝗼𝗻𝗷𝗼𝘂𝗿".to_string()),
+            result: Ok("𝗕𝗼𝗹𝗱".to_string()),
         };
-        let req = build_post_request(r#"{"syntax":"markdown","content":"**Bonjour**"}"#);
+        let req = build_post_request(r#"{"syntax":"markdown","content":"**Bold**"}"#);
         let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 200);
         let body = body_to_string(resp.into_body());
         assert!(body.contains("result"));
-        assert!(body.contains("𝗕𝗼𝗻𝗷𝗼𝘂𝗿"));
+        assert!(body.contains("𝗕𝗼𝗹𝗱"));
     }
 
     #[tokio::test]
-    async fn post_convert_json_invalide_retourne_400() {
+    async fn post_convert_invalid_json_returns_400() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
-        let req = build_post_request("pas du json");
+        let req = build_post_request("not json");
         let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 400);
         let body = body_to_string(resp.into_body());
-        assert!(body.contains("JSON invalide"));
+        assert!(body.contains("Invalid JSON"));
     }
 
     #[tokio::test]
-    async fn post_convert_syntaxe_inconnue_retourne_400() {
+    async fn post_convert_unknown_syntax_returns_400() {
         let svc = MockSvc {
             result: Err(ServiceError::UnsupportedSyntax("xml".to_string())),
         };
@@ -142,7 +142,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_convert_erreur_parser_retourne_400() {
+    async fn post_convert_parser_error_returns_400() {
         use parser::{ParseError, SourcePosition};
         let svc = MockSvc {
             result: Err(ServiceError::Parse(ParseError::UnsupportedSymbol {
@@ -162,7 +162,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_convert_content_vide_retourne_200_avec_chaine_vide() {
+    async fn post_convert_empty_content_returns_200_with_empty_string() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
@@ -174,7 +174,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reponse_contient_content_type_json() {
+    async fn response_200_contains_content_type_json() {
         let svc = MockSvc {
             result: Ok("x".to_string()),
         };
@@ -184,7 +184,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn champ_syntax_manquant_retourne_400() {
+    async fn missing_syntax_field_returns_400() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn champ_content_manquant_retourne_400() {
+    async fn missing_content_field_returns_400() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
@@ -204,7 +204,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn body_json_invalide_contient_message_erreur() {
+    async fn invalid_json_body_contains_error_message() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
@@ -216,11 +216,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reponse_400_contient_content_type_json() {
+    async fn response_400_contains_content_type_json() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
-        let req = build_post_request("pas du json");
+        let req = build_post_request("not json");
         let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.headers()["content-type"], "application/json");
     }

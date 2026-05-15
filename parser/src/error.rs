@@ -1,8 +1,9 @@
 use std::fmt;
 
 const SYNTAXES_HTTP_ENDPOINT: &str = "GET /syntaxes";
-const SYNTAXES_MCP_COMMAND: &str = "mcp list";
+const SYNTAXES_MCP_COMMAND: &str = "mcp list_syntaxes";
 
+/// Position of a token in the source input.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SourcePosition {
     pub line: usize,
@@ -14,18 +15,19 @@ impl fmt::Display for SourcePosition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "ligne {}, colonne {} (offset {})",
+            "line {}, column {} (offset {})",
             self.line, self.column, self.byte_offset
         )
     }
 }
 
+/// Errors produced by the Markdown and HTML parsers.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ParseError {
     #[error(
-        "Symbole non supporté : `{symbol}` à la position {position}.\n\
-         Consultez la liste des syntaxes supportées via :\n\
-         - API HTTP : {endpoint}\n\
+        "Unsupported symbol: `{symbol}` at {position}.\n\
+         Check the list of supported syntax via:\n\
+         - HTTP API : {endpoint}\n\
          - MCP CLI  : {mcp_cmd}",
         endpoint = SYNTAXES_HTTP_ENDPOINT,
         mcp_cmd = SYNTAXES_MCP_COMMAND
@@ -35,19 +37,23 @@ pub enum ParseError {
         position: SourcePosition,
     },
 
-    #[error("Document HTML invalide : {0}")]
+    /// The HTML document is structurally invalid.
+    #[error("Invalid HTML document: {0}")]
     InvalidHtml(String),
 
-    #[error("Entrée trop volumineuse : {found} octets (maximum : {max})")]
+    /// The input exceeds the maximum allowed size.
+    #[error("Input too large: {found} bytes (maximum: {max})")]
     InputTooLarge { found: usize, max: usize },
 
-    #[error("Balise HTML non fermée : `{tag}` ouverte à {position}")]
+    /// An HTML opening tag was never closed.
+    #[error("Unclosed HTML tag: `{tag}` opened at {position}")]
     UnclosedTag {
         tag: String,
         position: SourcePosition,
     },
 
-    #[error("Imbrication trop profonde : profondeur {depth} (maximum : {max})")]
+    /// The AST nesting depth exceeded the allowed maximum.
+    #[error("Nesting too deep: depth {depth} (maximum: {max})")]
     NestingTooDeep { depth: usize, max: usize },
 }
 
@@ -56,7 +62,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_error_unsupported_affiche_le_symbole() {
+    fn unsupported_symbol_error_contains_symbol() {
         let err = ParseError::UnsupportedSymbol {
             symbol: "<div>".to_string(),
             position: SourcePosition {
@@ -71,13 +77,13 @@ mod tests {
     }
 
     #[test]
-    fn source_position_affiche_ligne_et_colonne() {
+    fn source_position_displays_line_and_column() {
         let pos = SourcePosition {
             line: 2,
             column: 5,
             byte_offset: 20,
         };
-        assert!(pos.to_string().contains("ligne 2"));
-        assert!(pos.to_string().contains("colonne 5"));
+        assert!(pos.to_string().contains("line 2"));
+        assert!(pos.to_string().contains("column 5"));
     }
 }

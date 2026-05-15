@@ -1,10 +1,10 @@
 mod server;
 
 #[cfg(all(feature = "cli", feature = "http"))]
-compile_error!("Les features 'cli' et 'http' sont mutuellement exclusives.");
+compile_error!("Features 'cli' and 'http' are mutually exclusive.");
 
 #[cfg(all(not(test), not(any(feature = "cli", feature = "http"))))]
-compile_error!("Choisissez une feature : --features cli  ou  --features http");
+compile_error!("Choose a feature: --features cli  or  --features http");
 
 #[cfg(feature = "cli")]
 #[tokio::main]

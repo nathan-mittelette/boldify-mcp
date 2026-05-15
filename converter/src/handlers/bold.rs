@@ -79,66 +79,64 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_majuscule_converti_en_bold() {
+    fn uppercase_a_converted_to_bold() {
         let result = bold_handler().apply("A");
         assert_ne!(result, "A");
         assert_eq!(result.chars().next().unwrap() as u32, 0x1D5D4);
     }
 
     #[test]
-    fn a_minuscule_converti_en_bold() {
+    fn lowercase_a_converted_to_bold() {
         let result = bold_handler().apply("a");
         assert_eq!(result.chars().next().unwrap() as u32, 0x1D5EE);
     }
 
     #[test]
-    fn chiffre_converti_en_bold() {
+    fn digit_converted_to_bold() {
         let result = bold_handler().apply("0");
         assert_eq!(result.chars().next().unwrap() as u32, 0x1D7EC);
     }
 
     #[test]
-    fn espace_preserve() {
+    fn space_is_preserved() {
         assert_eq!(bold_handler().apply(" "), " ");
     }
 
     #[test]
-    fn newline_preserve() {
+    fn newline_is_preserved() {
         assert_eq!(bold_handler().apply("\n"), "\n");
     }
 
     #[test]
-    fn accent_e_aigu_converti() {
+    fn accented_e_acute_is_converted() {
         let result = bold_handler().apply("é");
         assert!(result.contains('\u{0301}'));
         assert!(!result.contains('é'));
     }
 
     #[test]
-    fn texte_complet_converti() {
+    fn full_word_is_converted() {
         let result = bold_handler().apply("Hello");
         assert!(!result.contains("Hello"));
         assert_eq!(result.chars().count(), 5);
     }
 
     #[test]
-    fn singleton_retourne_meme_instance() {
+    fn singleton_returns_same_instance() {
         let h1 = bold_handler();
         let h2 = bold_handler();
         assert!(std::ptr::eq(h1, h2));
     }
 
-    // ── Tâche 05b ────────────────────────────────────────────────────────────
-
     #[test]
-    fn bold_phrase_complete_avec_espaces() {
-        let result = bold_handler().apply("Bonjour tout le monde");
+    fn bold_full_sentence_with_spaces() {
+        let result = bold_handler().apply("Hello everyone");
         assert!(!result.chars().any(|c| c.is_ascii_alphabetic()));
         assert!(result.contains(' '));
     }
 
     #[test]
-    fn bold_phrase_avec_ponctuation() {
+    fn bold_sentence_with_punctuation() {
         let result = bold_handler().apply("Hello, world!");
         assert!(result.contains(','));
         assert!(result.contains('!'));
@@ -147,8 +145,8 @@ mod tests {
     }
 
     #[test]
-    fn bold_chiffres_et_lettres_mixtes() {
-        let result = bold_handler().apply("Top 3 en 2024");
+    fn bold_mixed_digits_and_letters() {
+        let result = bold_handler().apply("Top 3 in 2024");
         assert!(!result.contains('T'));
         assert!(!result.contains('3'));
         assert!(!result.contains('2'));
@@ -156,28 +154,24 @@ mod tests {
     }
 
     #[test]
-    fn bold_tous_les_accents_francais() {
+    fn bold_all_accented_characters_are_transformed() {
         let accents = "éèêëàáâäùúûüôöîïçÉÈÊËÀÂÄÙÛÜÔÖÎÏÇ";
         let result = bold_handler().apply(accents);
         for c in accents.chars() {
-            assert!(
-                !result.contains(c),
-                "Le caractère '{}' n'a pas été transformé",
-                c
-            );
+            assert!(!result.contains(c), "Character '{}' was not transformed", c);
         }
         assert!(result.chars().any(|c| matches!(c as u32, 0x0300..=0x036F)));
     }
 
     #[test]
-    fn bold_emoji_preserve_sans_transformation() {
+    fn bold_emoji_preserved_without_transformation() {
         assert_eq!(bold_handler().apply("🚀"), "🚀");
         assert_eq!(bold_handler().apply("🎉"), "🎉");
         assert_eq!(bold_handler().apply("👨‍💻"), "👨‍💻");
     }
 
     #[test]
-    fn bold_texte_avec_emoji_milieu() {
+    fn bold_text_with_emoji_in_middle() {
         let result = bold_handler().apply("Top 🚀 performer");
         assert!(result.contains("🚀"));
         assert!(!result.contains('T'));
@@ -185,28 +179,28 @@ mod tests {
     }
 
     #[test]
-    fn bold_newline_preserve() {
-        assert!(bold_handler().apply("ligne1\nligne2").contains('\n'));
+    fn bold_newline_is_preserved() {
+        assert!(bold_handler().apply("line1\nline2").contains('\n'));
     }
 
     #[test]
-    fn bold_chaine_vide_retourne_chaine_vide() {
+    fn bold_empty_string_returns_empty_string() {
         assert_eq!(bold_handler().apply(""), "");
     }
 
     #[test]
-    fn bold_uniquement_espaces_retourne_espaces() {
+    fn bold_only_spaces_returns_spaces() {
         assert_eq!(bold_handler().apply("   "), "   ");
     }
 
     #[test]
-    fn bold_texte_unicode_non_latin_preserve() {
+    fn bold_non_latin_unicode_is_preserved() {
         assert_eq!(bold_handler().apply("你好"), "你好");
         assert_eq!(bold_handler().apply("مرحبا"), "مرحبا");
     }
 
     #[test]
-    fn bold_tous_les_chiffres() {
+    fn bold_all_digits() {
         let result = bold_handler().apply("0123456789");
         assert!(!result.contains('0'));
         assert!(!result.contains('9'));

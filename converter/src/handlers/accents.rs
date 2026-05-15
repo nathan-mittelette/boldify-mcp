@@ -47,17 +47,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decompose_e_aigu() {
+    fn decompose_e_acute() {
         assert_eq!(decompose_accent('é'), Some(('e', "\u{0301}")));
     }
 
     #[test]
-    fn decompose_c_cedille() {
+    fn decompose_c_cedilla() {
         assert_eq!(decompose_accent('ç'), Some(('c', "\u{0327}")));
     }
 
     #[test]
-    fn decompose_caractere_sans_accent_retourne_none() {
+    fn decompose_char_without_accent_returns_none() {
         assert_eq!(decompose_accent('z'), None);
         assert_eq!(decompose_accent('1'), None);
     }

@@ -22,7 +22,7 @@ async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, E
             warn!("missing 'syntax' query parameter");
             error_response(
                 "MISSING_PARAMETER",
-                "Paramètre 'syntax' manquant. Valeurs acceptées : markdown, html",
+                "Missing 'syntax' parameter. Accepted values: markdown, html",
             )
         }
         Some(s) => match svc.list_syntaxes(&s) {
@@ -91,7 +91,7 @@ mod tests {
         match syntax {
             None => error_response(
                 "MISSING_PARAMETER",
-                "Paramètre 'syntax' manquant. Valeurs acceptées : markdown, html",
+                "Missing 'syntax' parameter. Accepted values: markdown, html",
             ),
             Some(s) => match svc.list_syntaxes(&s) {
                 Ok(symbols) => ok_json(
@@ -106,7 +106,7 @@ mod tests {
     fn symbols() -> Vec<SupportedSymbol> {
         vec![SupportedSymbol {
             symbol: "**".to_string(),
-            description: "Gras".to_string(),
+            description: "Bold".to_string(),
             example: "**x**".to_string(),
         }]
     }
@@ -120,7 +120,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_syntaxes_markdown_retourne_200_avec_json() {
+    async fn get_syntaxes_markdown_returns_200_with_json() {
         let svc = MockSvc {
             result: Ok(symbols()),
         };
@@ -132,7 +132,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_syntaxes_sans_param_retourne_400() {
+    async fn get_syntaxes_without_param_returns_400() {
         let svc = MockSvc {
             result: Ok(symbols()),
         };
@@ -142,7 +142,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_syntaxes_syntaxe_inconnue_retourne_400() {
+    async fn get_syntaxes_unknown_syntax_returns_400() {
         let svc = MockSvc {
             result: Err(ServiceError::UnsupportedSyntax("xml".to_string())),
         };
@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reponse_200_contient_content_type_json() {
+    async fn response_200_contains_content_type_json() {
         let svc = MockSvc {
             result: Ok(symbols()),
         };
@@ -164,7 +164,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reponse_400_contient_content_type_json() {
+    async fn response_400_contains_content_type_json() {
         let svc = MockSvc {
             result: Ok(symbols()),
         };
@@ -174,7 +174,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn body_400_sans_param_contient_message_explicite() {
+    async fn body_400_without_param_contains_explicit_message() {
         let svc = MockSvc {
             result: Ok(symbols()),
         };
@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_query_param_trouve_le_parametre() {
+    fn extract_query_param_finds_parameter() {
         let req = build_request("GET", "/syntaxes?syntax=markdown");
         assert_eq!(
             extract_query_param(&req, "syntax"),
@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_query_param_retourne_none_si_absent() {
+    fn extract_query_param_returns_none_if_absent() {
         let req = build_request("GET", "/syntaxes");
         assert_eq!(extract_query_param(&req, "syntax"), None);
     }

@@ -22,7 +22,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn surline_ajoute_combining_overline_a_chaque_char() {
+    fn surline_adds_combining_overline_to_each_char() {
         let result = SurlineHandler.apply("AB");
         let chars: Vec<char> = result.chars().collect();
         assert_eq!(chars[1], '\u{0305}');
@@ -30,24 +30,24 @@ mod tests {
     }
 
     #[test]
-    fn surline_preserve_espace() {
+    fn surline_preserves_space() {
         assert_eq!(SurlineHandler.apply(" "), " ");
     }
 
     #[test]
-    fn surline_preserve_newline() {
+    fn surline_preserves_newline() {
         assert_eq!(SurlineHandler.apply("\n"), "\n");
     }
 
     #[test]
-    fn surline_avec_emoji() {
+    fn surline_with_emoji() {
         let result = SurlineHandler.apply("🚀 go");
         assert!(result.contains("🚀"));
         assert!(result.contains(' '));
     }
 
     #[test]
-    fn surline_texte_vide() {
+    fn surline_empty_string() {
         let result = SurlineHandler.apply("");
         assert_eq!(result, "");
     }

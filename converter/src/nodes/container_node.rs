@@ -71,16 +71,14 @@ mod tests {
         }
     }
 
-    // ── Tâche 05 — tests de base ────────────────────────────────────────────
-
     #[test]
-    fn text_retourne_le_texte_brut() {
-        let node = make_container(ContainerType::Text, vec![make_text("Bonjour")]);
-        assert_eq!(node.to_unicode(), "Bonjour");
+    fn text_returns_raw_text() {
+        let node = make_container(ContainerType::Text, vec![make_text("Hello")]);
+        assert_eq!(node.to_unicode(), "Hello");
     }
 
     #[test]
-    fn bold_convertit_ascii_en_unicode_gras() {
+    fn bold_converts_ascii_to_unicode_bold() {
         let node = make_container(ContainerType::Bold, vec![make_text("ABC")]);
         let result = node.to_unicode();
         assert!(!result.contains("ABC"));
@@ -88,13 +86,13 @@ mod tests {
     }
 
     #[test]
-    fn bold_preserve_espace() {
+    fn bold_preserves_space() {
         let node = make_container(ContainerType::Bold, vec![make_text("A B")]);
         assert!(node.to_unicode().contains(' '));
     }
 
     #[test]
-    fn bold_convertit_accent() {
+    fn bold_converts_accented_char() {
         let node = make_container(ContainerType::Bold, vec![make_text("é")]);
         let result = node.to_unicode();
         assert!(result.contains('\u{0301}'));
@@ -102,22 +100,22 @@ mod tests {
     }
 
     #[test]
-    fn italic_convertit_ascii_en_unicode_italique() {
+    fn italic_converts_ascii_to_unicode_italic() {
         let node = make_container(ContainerType::Italic, vec![make_text("Hello")]);
         assert!(!node.to_unicode().contains("Hello"));
     }
 
     #[test]
-    fn blockquote_encadre_le_texte() {
-        let node = make_container(ContainerType::Blockquote, vec![make_text("citation")]);
+    fn blockquote_wraps_text_with_quotes() {
+        let node = make_container(ContainerType::Blockquote, vec![make_text("quote")]);
         let result = node.to_unicode();
-        assert!(result.contains("citation"));
+        assert!(result.contains("quote"));
         assert!(result.contains('❝'));
         assert!(result.contains('❞'));
     }
 
     #[test]
-    fn list_prefixe_chaque_item_avec_puce() {
+    fn list_prefixes_each_item_with_bullet() {
         let li_a = InlineNode::ListItem(ListItemNode {
             base: NodeBase::new(0, Span::new(0, 0)),
             children: vec![make_text("alpha")],
@@ -133,17 +131,17 @@ mod tests {
     }
 
     #[test]
-    fn ordered_list_numerote_les_items() {
+    fn ordered_list_numbers_items() {
         let li = InlineNode::ListItem(ListItemNode {
             base: NodeBase::new(0, Span::new(0, 0)),
-            children: vec![make_text("premier")],
+            children: vec![make_text("first")],
         });
         let node = make_container(ContainerType::OrderedList, vec![li]);
-        assert!(node.to_unicode().contains("1. premier"));
+        assert!(node.to_unicode().contains("1. first"));
     }
 
     #[test]
-    fn bold_contenant_italic_applique_les_deux_styles() {
+    fn bold_containing_italic_applies_both_styles() {
         let italic_child = InlineNode::Container(make_container(
             ContainerType::Italic,
             vec![make_text("Nathan")],
@@ -152,19 +150,16 @@ mod tests {
         assert!(!bold_node.to_unicode().contains("Nathan"));
     }
 
-    // ── Tâche 05b — tests avancés ───────────────────────────────────────────
-
     #[test]
-    fn bold_avec_emoji_dans_le_texte() {
-        let node = make_container(ContainerType::Bold, vec![make_text("🔥 Résultats")]);
+    fn bold_with_emoji_in_text() {
+        let node = make_container(ContainerType::Bold, vec![make_text("🔥 Results")]);
         let result = node.to_unicode();
         assert!(result.contains("🔥"));
         assert!(!result.contains('R'));
-        assert!(!result.contains('é'));
     }
 
     #[test]
-    fn bold_avec_ponctuation_et_chiffres() {
+    fn bold_with_punctuation_and_digits() {
         let node = make_container(ContainerType::Bold, vec![make_text("Top 3 !")]);
         let result = node.to_unicode();
         assert!(result.contains(' '));
@@ -173,13 +168,13 @@ mod tests {
     }
 
     #[test]
-    fn text_avec_emoji_retourne_emoji_intact() {
+    fn text_with_emoji_returns_emoji_intact() {
         let node = make_container(ContainerType::Text, vec![make_text("Hello 👋")]);
         assert_eq!(node.to_unicode(), "Hello 👋");
     }
 
     #[test]
-    fn italic_avec_accents_transforme_les_bases() {
+    fn italic_with_accents_transforms_base_chars() {
         let node = make_container(ContainerType::Italic, vec![make_text("élégance")]);
         let result = node.to_unicode();
         assert!(!result.contains('é'));
@@ -187,27 +182,24 @@ mod tests {
     }
 
     #[test]
-    fn strikethrough_avec_plusieurs_mots() {
-        let node = make_container(
-            ContainerType::Strikethrough,
-            vec![make_text("ancien contenu")],
-        );
+    fn strikethrough_with_multiple_words() {
+        let node = make_container(ContainerType::Strikethrough, vec![make_text("old content")]);
         let result = node.to_unicode();
         assert!(result.contains('\u{0336}'));
         assert!(result.contains(' '));
     }
 
     #[test]
-    fn underline_avec_chiffres() {
+    fn underline_with_digits() {
         let node = make_container(ContainerType::Underline, vec![make_text("2024")]);
         assert!(node.to_unicode().contains('\u{0332}'));
     }
 
     #[test]
-    fn blockquote_avec_emoji_dans_citation() {
+    fn blockquote_with_emoji_in_quote() {
         let node = make_container(
             ContainerType::Blockquote,
-            vec![make_text("Sois le changement 🌱")],
+            vec![make_text("Be the change 🌱")],
         );
         let result = node.to_unicode();
         assert!(result.contains('❝'));
@@ -215,8 +207,8 @@ mod tests {
     }
 
     #[test]
-    fn list_avec_items_contenant_des_emojis() {
-        let items: Vec<InlineNode> = ["🎯 Objectif", "🚀 Lancement", "✅ Terminé"]
+    fn list_with_emoji_items() {
+        let items: Vec<InlineNode> = ["🎯 Goal", "🚀 Launch", "✅ Done"]
             .iter()
             .enumerate()
             .map(|(i, text)| {
@@ -228,30 +220,30 @@ mod tests {
             .collect();
         let node = make_container(ContainerType::List, items);
         let result = node.to_unicode();
-        assert!(result.contains("• 🎯 Objectif"));
-        assert!(result.contains("• 🚀 Lancement"));
-        assert!(result.contains("• ✅ Terminé"));
+        assert!(result.contains("• 🎯 Goal"));
+        assert!(result.contains("• 🚀 Launch"));
+        assert!(result.contains("• ✅ Done"));
     }
 
     #[test]
-    fn ordered_list_avec_bold_dans_items() {
+    fn ordered_list_with_bold_in_items() {
         let bold_child = InlineNode::Container(make_container(
             ContainerType::Bold,
             vec![make_text("Important")],
         ));
         let li = InlineNode::ListItem(ListItemNode {
             base: NodeBase::new(0, Span::new(0, 0)),
-            children: vec![bold_child, make_text(" à retenir")],
+            children: vec![bold_child, make_text(" to remember")],
         });
         let node = make_container(ContainerType::OrderedList, vec![li]);
         let result = node.to_unicode();
         assert!(result.contains("1."));
         assert!(!result.contains("Important"));
-        assert!(result.contains(" à retenir"));
+        assert!(result.contains(" to remember"));
     }
 
     #[test]
-    fn tous_les_styles_produisent_des_resultats_differents() {
+    fn all_styles_produce_different_results() {
         let text = "ABC";
         let bold = make_container(ContainerType::Bold, vec![make_text(text)]).to_unicode();
         let italic = make_container(ContainerType::Italic, vec![make_text(text)]).to_unicode();
@@ -266,7 +258,7 @@ mod tests {
             for j in (i + 1)..styles.len() {
                 assert_ne!(
                     styles[i], styles[j],
-                    "Les styles {} et {} produisent le même résultat pour \"{}\"",
+                    "Styles {} and {} produce the same result for \"{}\"",
                     i, j, text
                 );
             }
@@ -274,37 +266,37 @@ mod tests {
     }
 
     #[test]
-    fn convert_noeud_text_avec_newline_interne() {
-        let node = make_container(ContainerType::Bold, vec![make_text("ligne1\nligne2")]);
+    fn bold_node_with_internal_newline() {
+        let node = make_container(ContainerType::Bold, vec![make_text("line1\nline2")]);
         let result = node.to_unicode();
         assert!(result.contains('\n'));
-        assert!(!result.contains("ligne"));
+        assert!(!result.contains("line"));
     }
 
     #[test]
-    fn convert_container_text_avec_inline_containers_multiples() {
+    fn text_container_with_multiple_inline_containers() {
         let node = make_container(
             ContainerType::Text,
             vec![
-                make_text("Texte "),
-                InlineNode::Container(make_container(ContainerType::Bold, vec![make_text("gras")])),
-                make_text(" et "),
+                make_text("Text "),
+                InlineNode::Container(make_container(ContainerType::Bold, vec![make_text("bold")])),
+                make_text(" and "),
                 InlineNode::Container(make_container(
                     ContainerType::Italic,
-                    vec![make_text("italique")],
+                    vec![make_text("italic")],
                 )),
-                make_text(" et "),
+                make_text(" and "),
                 InlineNode::Container(make_container(
                     ContainerType::Surline,
-                    vec![make_text("surligné")],
+                    vec![make_text("highlighted")],
                 )),
             ],
         );
         let result = node.to_unicode();
-        assert!(result.contains("Texte "));
-        assert!(result.contains(" et "));
-        assert!(!result.contains("gras"));
-        assert!(!result.contains("italique"));
+        assert!(result.contains("Text "));
+        assert!(result.contains(" and "));
+        assert!(!result.contains("bold"));
+        assert!(!result.contains("italic"));
         assert!(result.contains('\u{0305}'));
     }
 }

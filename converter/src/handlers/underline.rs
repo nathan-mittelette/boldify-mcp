@@ -22,7 +22,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn underline_ajoute_combining_a_chaque_char() {
+    fn underline_adds_combining_to_each_char() {
         let result = UnderlineHandler.apply("AB");
         let chars: Vec<char> = result.chars().collect();
         assert_eq!(chars[1], '\u{0332}');
@@ -30,17 +30,17 @@ mod tests {
     }
 
     #[test]
-    fn underline_preserve_espace() {
+    fn underline_preserves_space() {
         assert_eq!(UnderlineHandler.apply(" "), " ");
     }
 
     #[test]
-    fn underline_preserve_newline() {
+    fn underline_preserves_newline() {
         assert_eq!(UnderlineHandler.apply("\n"), "\n");
     }
 
     #[test]
-    fn underline_chaque_char_a_son_combining() {
+    fn underline_each_char_has_combining() {
         let result = UnderlineHandler.apply("ABC");
         let chars: Vec<char> = result.chars().collect();
         assert_eq!(chars.len(), 6);
@@ -50,13 +50,13 @@ mod tests {
     }
 
     #[test]
-    fn underline_emoji_preserve_sans_combining() {
+    fn underline_emoji_preserved_without_combining() {
         let result = UnderlineHandler.apply("🚀");
         assert!(result.contains('🚀') || result.chars().next().unwrap() as u32 > 0xFFFF);
     }
 
     #[test]
-    fn underline_espace_preserve_sans_combining() {
+    fn underline_space_preserved_without_combining() {
         let result = UnderlineHandler.apply("A B");
         let chars: Vec<char> = result.chars().collect();
         let space_index = chars.iter().position(|&c| c == ' ').unwrap();
