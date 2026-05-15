@@ -122,7 +122,13 @@ impl Parser for HtmlParser {
             i = abs_tag_end;
         }
 
-        flush_text(&mut text_buf, &mut stack, &mut result, input.len(), &mut id_gen);
+        flush_text(
+            &mut text_buf,
+            &mut stack,
+            &mut result,
+            input.len(),
+            &mut id_gen,
+        );
 
         if let Some(unclosed) = stack.last() {
             return Err(ParseError::UnclosedTag {
@@ -156,11 +162,17 @@ impl Parser for HtmlParser {
 /// Returns `None` if the input does not start with either construct.
 fn skip_comment_or_doctype(rest: &str, base: usize) -> Option<usize> {
     if rest.starts_with("<!--") {
-        let end = rest.find("-->").map(|p| base + p + 3).unwrap_or(base + rest.len());
+        let end = rest
+            .find("-->")
+            .map(|p| base + p + 3)
+            .unwrap_or(base + rest.len());
         return Some(end);
     }
     if rest.starts_with("<!") {
-        let end = rest.find('>').map(|p| base + p + 1).unwrap_or(base + rest.len());
+        let end = rest
+            .find('>')
+            .map(|p| base + p + 1)
+            .unwrap_or(base + rest.len());
         return Some(end);
     }
     None
@@ -222,7 +234,8 @@ fn push_open_tag(
         && result_has_content(result)
         && matches!(
             kind,
-            TagKind::Container(ContainerType::List) | TagKind::Container(ContainerType::OrderedList)
+            TagKind::Container(ContainerType::List)
+                | TagKind::Container(ContainerType::OrderedList)
         )
     {
         push_newline(stack, result, id_gen);
@@ -392,7 +405,7 @@ fn close_open_tag(open: OpenTag, id_gen: &mut NodeIdGen) -> InlineNode {
 
 fn attach_closed_node(
     node: InlineNode,
-    stack: &mut Vec<OpenTag>,
+    stack: &mut [OpenTag],
     result: &mut Vec<ContainerNode>,
     id_gen: &mut NodeIdGen,
 ) {
@@ -403,11 +416,7 @@ fn attach_closed_node(
     attach_to_root(node, result, id_gen);
 }
 
-fn attach_to_root(
-    node: InlineNode,
-    result: &mut Vec<ContainerNode>,
-    id_gen: &mut NodeIdGen,
-) {
+fn attach_to_root(node: InlineNode, result: &mut Vec<ContainerNode>, id_gen: &mut NodeIdGen) {
     match node {
         InlineNode::Container(c) => attach_container_to_root(c, result, id_gen),
         InlineNode::ListItem(li) => {
@@ -438,11 +447,7 @@ fn attach_container_to_root(
     }
 }
 
-fn merge_or_push_text(
-    node: InlineNode,
-    result: &mut Vec<ContainerNode>,
-    id_gen: &mut NodeIdGen,
-) {
+fn merge_or_push_text(node: InlineNode, result: &mut Vec<ContainerNode>, id_gen: &mut NodeIdGen) {
     if let Some(last) = result.last_mut() {
         if last.container_type == ContainerType::Text {
             last.children.push(node);
