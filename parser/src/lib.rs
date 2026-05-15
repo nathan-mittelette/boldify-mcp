@@ -1,3 +1,8 @@
+//! Parser crate — converts Markdown or HTML source text into an AST.
+//!
+//! Use [`MarkdownParser`] or [`HtmlParser`] via the [`Parser`] trait.
+//! Unsupported constructs produce [`ParseError::UnsupportedSymbol`].
+
 pub mod ast;
 pub mod error;
 pub mod html;

@@ -1,47 +1,48 @@
+use api_shared::{error_response, ok_json};
 use lambda_http::{run, service_fn, Body, Error, Request, Response};
-use service::ContentService;
+use service::{ContentService, ServiceError};
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt()
+        .json()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+        .init();
     let svc = ContentService::new();
     run(service_fn(|req| handler(req, &svc))).await
 }
 
-trait SyntaxesService: Send + Sync {
-    fn list_syntaxes(
-        &self,
-        syntax: &str,
-    ) -> Result<Vec<parser::SupportedSymbol>, service::ServiceError>;
-}
-
-impl SyntaxesService for ContentService {
-    fn list_syntaxes(
-        &self,
-        syntax: &str,
-    ) -> Result<Vec<parser::SupportedSymbol>, service::ServiceError> {
-        ContentService::list_syntaxes(self, syntax)
-    }
-}
-
 async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, Error> {
-    handler_generic(req, svc).await
-}
-
-async fn handler_generic(req: Request, svc: &dyn SyntaxesService) -> Result<Response<Body>, Error> {
+    info!(method = %req.method(), path = %req.uri().path(), "request received");
     let syntax = extract_query_param(&req, "syntax");
 
     match syntax {
-        None => bad_request("Paramètre 'syntax' manquant. Valeurs acceptées : markdown, html"),
+        None => {
+            warn!("missing 'syntax' query parameter");
+            error_response(
+                "MISSING_PARAMETER",
+                "Missing 'syntax' parameter. Accepted values: markdown, html",
+            )
+        }
         Some(s) => match svc.list_syntaxes(&s) {
-            Ok(symbols) => {
-                let json = serde_json::to_string(&symbols)?;
-                Ok(Response::builder()
-                    .status(200)
-                    .header("Content-Type", "application/json")
-                    .body(Body::Text(json))?)
+            Ok(symbols) => ok_json(
+                serde_json::to_string(&symbols)
+                    .expect("serialization of Vec<SupportedSymbol> cannot fail"),
+            ),
+            Err(e) => {
+                warn!(error = %e, syntax = %s, "list_syntaxes failed");
+                error_response(service_error_code(&e), &e.to_string())
             }
-            Err(e) => bad_request(&e.to_string()),
         },
+    }
+}
+
+fn service_error_code(e: &ServiceError) -> &'static str {
+    match e {
+        ServiceError::UnsupportedSyntax(_) => "UNSUPPORTED_SYNTAX",
+        ServiceError::InputTooLarge { .. } => "INPUT_TOO_LARGE",
+        ServiceError::Parse(_) => "PARSE_ERROR",
     }
 }
 
@@ -53,20 +54,23 @@ fn extract_query_param(req: &Request, key: &str) -> Option<String> {
     })
 }
 
-fn bad_request(msg: &str) -> Result<Response<Body>, lambda_http::Error> {
-    let body = serde_json::json!({ "error": msg }).to_string();
-    Ok(Response::builder()
-        .status(400)
-        .header("Content-Type", "application/json")
-        .body(Body::Text(body))?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use api_shared::body_to_string;
     use lambda_http::http::Request as HttpRequest;
     use parser::SupportedSymbol;
     use service::ServiceError;
+
+    trait SyntaxesService: Send + Sync {
+        fn list_syntaxes(&self, syntax: &str) -> Result<Vec<SupportedSymbol>, ServiceError>;
+    }
+
+    impl SyntaxesService for ContentService {
+        fn list_syntaxes(&self, syntax: &str) -> Result<Vec<SupportedSymbol>, ServiceError> {
+            ContentService::list_syntaxes(self, syntax)
+        }
+    }
 
     struct MockSvc {
         result: Result<Vec<SupportedSymbol>, ServiceError>,
@@ -78,10 +82,31 @@ mod tests {
         }
     }
 
+    async fn handler_with<S: SyntaxesService>(
+        req: Request,
+        svc: &S,
+    ) -> Result<Response<Body>, Error> {
+        let syntax = extract_query_param(&req, "syntax");
+
+        match syntax {
+            None => error_response(
+                "MISSING_PARAMETER",
+                "Missing 'syntax' parameter. Accepted values: markdown, html",
+            ),
+            Some(s) => match svc.list_syntaxes(&s) {
+                Ok(symbols) => ok_json(
+                    serde_json::to_string(&symbols)
+                        .expect("serialization of Vec<SupportedSymbol> cannot fail"),
+                ),
+                Err(e) => error_response(service_error_code(&e), &e.to_string()),
+            },
+        }
+    }
+
     fn symbols() -> Vec<SupportedSymbol> {
         vec![SupportedSymbol {
             symbol: "**".to_string(),
-            description: "Gras".to_string(),
+            description: "Bold".to_string(),
             example: "**x**".to_string(),
         }]
     }
@@ -94,82 +119,73 @@ mod tests {
             .unwrap()
     }
 
-    async fn body_to_string(resp: Response<Body>) -> String {
-        match resp.into_body() {
-            Body::Text(s) => s,
-            Body::Binary(b) => String::from_utf8_lossy(&b).into_owned(),
-            Body::Empty => String::new(),
-            _ => String::new(),
-        }
-    }
-
     #[tokio::test]
-    async fn get_syntaxes_markdown_retourne_200_avec_json() {
+    async fn get_syntaxes_markdown_returns_200_with_json() {
         let svc = MockSvc {
             result: Ok(symbols()),
         };
         let req = build_request("GET", "/syntaxes?syntax=markdown");
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 200);
-        let body = body_to_string(resp).await;
+        let body = body_to_string(resp.into_body());
         assert!(body.contains("**"));
     }
 
     #[tokio::test]
-    async fn get_syntaxes_sans_param_retourne_400() {
+    async fn get_syntaxes_without_param_returns_400() {
         let svc = MockSvc {
             result: Ok(symbols()),
         };
         let req = build_request("GET", "/syntaxes");
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 400);
     }
 
     #[tokio::test]
-    async fn get_syntaxes_syntaxe_inconnue_retourne_400() {
+    async fn get_syntaxes_unknown_syntax_returns_400() {
         let svc = MockSvc {
             result: Err(ServiceError::UnsupportedSyntax("xml".to_string())),
         };
         let req = build_request("GET", "/syntaxes?syntax=xml");
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 400);
-        let body = body_to_string(resp).await;
+        let body = body_to_string(resp.into_body());
         assert!(body.contains("error"));
     }
 
     #[tokio::test]
-    async fn reponse_200_contient_content_type_json() {
+    async fn response_200_contains_content_type_json() {
         let svc = MockSvc {
             result: Ok(symbols()),
         };
         let req = build_request("GET", "/syntaxes?syntax=markdown");
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.headers()["content-type"], "application/json");
     }
 
     #[tokio::test]
-    async fn reponse_400_contient_content_type_json() {
+    async fn response_400_contains_content_type_json() {
         let svc = MockSvc {
             result: Ok(symbols()),
         };
         let req = build_request("GET", "/syntaxes");
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.headers()["content-type"], "application/json");
     }
 
     #[tokio::test]
-    async fn body_400_sans_param_contient_message_explicite() {
+    async fn body_400_without_param_contains_explicit_message() {
         let svc = MockSvc {
             result: Ok(symbols()),
         };
         let req = build_request("GET", "/syntaxes");
-        let resp = handler_generic(req, &svc).await.unwrap();
-        let body = body_to_string(resp).await;
+        let resp = handler_with(req, &svc).await.unwrap();
+        let body = body_to_string(resp.into_body());
         assert!(body.contains("syntax"));
     }
 
     #[test]
-    fn extract_query_param_trouve_le_parametre() {
+    fn extract_query_param_finds_parameter() {
         let req = build_request("GET", "/syntaxes?syntax=markdown");
         assert_eq!(
             extract_query_param(&req, "syntax"),
@@ -178,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_query_param_retourne_none_si_absent() {
+    fn extract_query_param_returns_none_if_absent() {
         let req = build_request("GET", "/syntaxes");
         assert_eq!(extract_query_param(&req, "syntax"), None);
     }

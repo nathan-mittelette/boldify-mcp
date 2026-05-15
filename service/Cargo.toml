@@ -7,3 +7,4 @@ edition = "2021"
 parser    = { path = "../parser" }
 converter = { path = "../converter" }
 thiserror = "2"
+tracing   = "0.1"

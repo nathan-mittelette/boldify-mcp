@@ -1,3 +1,17 @@
+//! Markdown parser — converts a Markdown string into a list of [`ContainerNode`]s.
+//!
+//! # Supported syntax
+//! - `**bold**` / `__bold__`
+//! - `*italic*` / `_italic_`
+//! - `~~strikethrough~~`
+//! - `==highlight==`
+//! - Unordered lists (`- item` or `* item`)
+//! - Ordered lists (`1. item`)
+//!
+//! # Unsupported constructs
+//! Headings (`#`), blockquotes (`>`), code spans (`` ` ``), and HTML tags
+//! all produce a [`ParseError::UnsupportedSymbol`].
+
 use crate::{
     ast::{ContainerNode, ContainerType, InlineNode, ListItemNode, NodeBase, Span, TextNode},
     error::{ParseError, SourcePosition},
@@ -11,14 +25,6 @@ pub struct MarkdownParser;
 
 impl Parser for MarkdownParser {
     fn parse(&self, input: &str) -> Result<Vec<ContainerNode>, ParseError> {
-        const MAX_SIZE: usize = 10 * 1024 * 1024;
-        if input.len() > MAX_SIZE {
-            return Err(ParseError::InputTooLarge {
-                found: input.len(),
-                max: MAX_SIZE,
-            });
-        }
-
         let lines = collect_lines(input);
         let mut nodes = Vec::new();
         let mut id_gen = NodeIdGen::new();
@@ -169,43 +175,43 @@ impl Parser for MarkdownParser {
         vec![
             crate::SupportedSymbol {
                 symbol: "**".into(),
-                description: "Gras".into(),
-                example: "**texte gras**".into(),
+                description: "Bold".into(),
+                example: "**bold text**".into(),
             },
             crate::SupportedSymbol {
                 symbol: "*".into(),
-                description: "Italique".into(),
-                example: "*texte italique*".into(),
+                description: "Italic".into(),
+                example: "*italic text*".into(),
             },
             crate::SupportedSymbol {
                 symbol: "_".into(),
-                description: "Italique (variante)".into(),
-                example: "_texte italique_".into(),
+                description: "Italic (alternative)".into(),
+                example: "_italic text_".into(),
             },
             crate::SupportedSymbol {
                 symbol: "__".into(),
-                description: "Souligné".into(),
-                example: "__texte souligné__".into(),
+                description: "Underline".into(),
+                example: "__underlined text__".into(),
             },
             crate::SupportedSymbol {
                 symbol: "~~".into(),
-                description: "Texte barré".into(),
-                example: "~~texte barré~~".into(),
+                description: "Strikethrough".into(),
+                example: "~~strikethrough text~~".into(),
             },
             crate::SupportedSymbol {
                 symbol: "==".into(),
-                description: "Surligné".into(),
-                example: "==texte surligné==".into(),
+                description: "Highlight".into(),
+                example: "==highlighted text==".into(),
             },
             crate::SupportedSymbol {
                 symbol: "- ".into(),
-                description: "Liste non ordonnée".into(),
-                example: "- item de liste".into(),
+                description: "Unordered list".into(),
+                example: "- list item".into(),
             },
             crate::SupportedSymbol {
                 symbol: "1. ".into(),
-                description: "Liste ordonnée".into(),
-                example: "1. premier item".into(),
+                description: "Ordered list".into(),
+                example: "1. first item".into(),
             },
         ]
     }
@@ -364,16 +370,17 @@ mod tests {
             .count()
     }
 
-    // Cas nominaux
+    // ── Basic cases ──────────────────────────────────────────────────────────
+
     #[test]
-    fn texte_simple_produit_container_text() {
-        let result = MarkdownParser.parse("Bonjour").unwrap();
+    fn plain_text_produces_text_container() {
+        let result = MarkdownParser.parse("Hello").unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].container_type, ContainerType::Text);
     }
 
     #[test]
-    fn gras_produit_container_bold() {
+    fn bold_produces_bold_container() {
         let result = MarkdownParser.parse("**Hello**").unwrap();
         assert_eq!(result.len(), 1);
         let bold = find_container(&result, ContainerType::Bold);
@@ -382,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn italique_etoile_produit_container_italic() {
+    fn italic_star_produces_italic_container() {
         let result = MarkdownParser.parse("*Nathan*").unwrap();
         let italic = find_container(&result, ContainerType::Italic);
         assert!(italic.is_some());
@@ -390,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn italique_underscore_produit_container_italic() {
+    fn italic_underscore_produces_italic_container() {
         let result = MarkdownParser.parse("_Nathan_").unwrap();
         let italic = find_container(&result, ContainerType::Italic);
         assert!(italic.is_some());
@@ -398,31 +405,31 @@ mod tests {
     }
 
     #[test]
-    fn barre_produit_container_strikethrough() {
-        let result = MarkdownParser.parse("~~barré~~").unwrap();
+    fn strikethrough_produces_strikethrough_container() {
+        let result = MarkdownParser.parse("~~crossed~~").unwrap();
         let strike = find_container(&result, ContainerType::Strikethrough);
         assert!(strike.is_some());
-        assert_eq!(extract_text_from_container(strike.unwrap()), "barré");
+        assert_eq!(extract_text_from_container(strike.unwrap()), "crossed");
     }
 
     #[test]
-    fn surline_produit_container_surline() {
-        let result = MarkdownParser.parse("==surligné==").unwrap();
+    fn highlight_produces_surline_container() {
+        let result = MarkdownParser.parse("==highlighted==").unwrap();
         let surline = find_container(&result, ContainerType::Surline);
         assert!(surline.is_some());
-        assert_eq!(extract_text_from_container(surline.unwrap()), "surligné");
+        assert_eq!(extract_text_from_container(surline.unwrap()), "highlighted");
     }
 
     #[test]
-    fn citation_produit_erreur_unsupported() {
-        let result = MarkdownParser.parse("> citation");
+    fn blockquote_produces_unsupported_error() {
+        let result = MarkdownParser.parse("> quote");
         assert!(
             matches!(result, Err(ParseError::UnsupportedSymbol { symbol, .. }) if symbol == ">")
         );
     }
 
     #[test]
-    fn liste_non_ordonnee_produit_container_list() {
+    fn unordered_list_produces_list_container() {
         let result = MarkdownParser.parse("- a\n- b").unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].container_type, ContainerType::List);
@@ -435,8 +442,8 @@ mod tests {
     }
 
     #[test]
-    fn liste_ordonnee_produit_container_ordered_list() {
-        let result = MarkdownParser.parse("1. un\n2. deux").unwrap();
+    fn ordered_list_produces_ordered_list_container() {
+        let result = MarkdownParser.parse("1. one\n2. two").unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].container_type, ContainerType::OrderedList);
         let list_items = result[0]
@@ -447,21 +454,21 @@ mod tests {
         assert_eq!(list_items, 2);
     }
 
-    // Imbrication
+    // ── Nesting ──────────────────────────────────────────────────────────────
+
     #[test]
-    fn gras_contenant_italique_imbriqué() {
+    fn bold_containing_italic_nested() {
         let result = MarkdownParser
-            .parse("**Bonjour *Nathan*, vas-tu ?**")
+            .parse("**Hello *Nathan*, how are you?**")
             .unwrap();
         let bold = find_container(&result, ContainerType::Bold);
         assert!(bold.is_some());
-        let bold_node = bold.unwrap();
-        let italic = find_container_in_inline(&bold_node.children, ContainerType::Italic);
+        let italic = find_container_in_inline(&bold.unwrap().children, ContainerType::Italic);
         assert!(italic.is_some());
     }
 
     #[test]
-    fn texte_mixte_gras_et_normal() {
+    fn mixed_text_and_bold() {
         let result = MarkdownParser.parse("Hello **world**").unwrap();
         assert_eq!(result.len(), 1);
         let root = &result[0];
@@ -471,83 +478,86 @@ mod tests {
         assert!(has_bold);
     }
 
-    // Erreurs
+    // ── Errors ───────────────────────────────────────────────────────────────
+
     #[test]
-    fn diese_produit_erreur_unsupported() {
-        let result = MarkdownParser.parse("# Titre");
+    fn heading_produces_unsupported_error() {
+        let result = MarkdownParser.parse("# Title");
         assert!(
             matches!(result, Err(ParseError::UnsupportedSymbol { symbol, .. }) if symbol == "#")
         );
     }
 
     #[test]
-    fn marqueur_non_ferme_produit_erreur() {
-        let result = MarkdownParser.parse("**non fermé");
+    fn unclosed_marker_produces_error() {
+        let result = MarkdownParser.parse("**not closed");
         assert!(matches!(result, Err(ParseError::UnsupportedSymbol { .. })));
     }
 
     #[test]
-    fn backtick_produit_erreur_unsupported() {
+    fn backtick_produces_unsupported_error() {
         let result = MarkdownParser.parse("`code`");
         assert!(matches!(result, Err(ParseError::UnsupportedSymbol { .. })));
     }
 
     #[test]
-    fn erreur_contient_position_precise() {
+    fn error_contains_precise_position() {
         let result = MarkdownParser.parse("Hello `code`");
         if let Err(ParseError::UnsupportedSymbol { position, .. }) = result {
             assert_eq!(position.line, 1);
             assert!(position.column > 1);
         } else {
-            panic!("Attendu UnsupportedSymbol");
+            panic!("Expected UnsupportedSymbol error");
         }
     }
 
-    // Cas limites
+    // ── Edge cases ───────────────────────────────────────────────────────────
+
     #[test]
-    fn input_vide_retourne_vec_vide() {
+    fn empty_input_returns_empty_vec() {
         let result = MarkdownParser.parse("").unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
-    fn lignes_vides_ignorees() {
+    fn blank_lines_ignored() {
         let result = MarkdownParser.parse("\n\n\n").unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
-    fn texte_unicode_preserve() {
-        let result = MarkdownParser.parse("données résumé").unwrap();
+    fn unicode_text_preserved() {
+        let result = MarkdownParser.parse("data résumé").unwrap();
         let text = extract_text(&result);
-        assert!(text.contains("données résumé"));
+        assert!(text.contains("data résumé"));
     }
 
     #[test]
-    fn supported_symbols_retourne_8_entrees() {
+    fn supported_symbols_returns_8_entries() {
         let symbols = MarkdownParser.supported_symbols();
         assert_eq!(symbols.len(), 8);
         assert!(!symbols.iter().any(|symbol| symbol.symbol == "> "));
     }
 
-    // Tests avancés - Emojis
+    // ── Emojis ───────────────────────────────────────────────────────────────
+
     #[test]
-    fn emoji_seul_dans_texte_preserve() {
+    fn single_emoji_preserved() {
         let result = MarkdownParser.parse("🚀").unwrap();
         let text = extract_text(&result);
         assert_eq!(text, "🚀");
     }
 
     #[test]
-    fn emoji_dans_texte_normal_preserve() {
-        let result = MarkdownParser.parse("Bonjour 👋 tout le monde").unwrap();
+    fn emoji_in_plain_text_preserved() {
+        let result = MarkdownParser.parse("Hello 👋 world").unwrap();
         let text = extract_text(&result);
         assert!(text.contains("👋"));
     }
 
     #[test]
-    fn emoji_dans_gras_preserve() {
-        let result = MarkdownParser.parse("**🔥 Résultats**").unwrap();
+    fn emoji_in_bold_preserved() {
+        let result = MarkdownParser.parse("**🔥 Results**").unwrap();
         let bold = find_container(&result, ContainerType::Bold);
         assert!(bold.is_some());
         let text = extract_text_from_container(bold.unwrap());
@@ -555,44 +565,45 @@ mod tests {
     }
 
     #[test]
-    fn emoji_dans_italique_preserve() {
-        let result = MarkdownParser.parse("*✨ incroyable*").unwrap();
+    fn emoji_in_italic_preserved() {
+        let result = MarkdownParser.parse("*✨ amazing*").unwrap();
         let italic = find_container(&result, ContainerType::Italic);
         assert!(italic.is_some());
     }
 
     #[test]
-    fn emoji_consecutifs_preserves() {
+    fn consecutive_emojis_preserved() {
         let result = MarkdownParser.parse("🎯🎯🎯").unwrap();
         let text = extract_text(&result);
         assert_eq!(text, "🎯🎯🎯");
     }
 
     #[test]
-    fn emoji_en_debut_de_ligne_preserve() {
-        let result = MarkdownParser.parse("✅ Objectif atteint").unwrap();
+    fn emoji_at_line_start_preserved() {
+        let result = MarkdownParser.parse("✅ Goal reached").unwrap();
         let text = extract_text(&result);
         assert!(text.starts_with("✅"));
     }
 
     #[test]
-    fn emoji_multicodepoint_preserve() {
-        let result = MarkdownParser.parse("👨‍💻 développeur").unwrap();
+    fn multi_codepoint_emoji_preserved() {
+        let result = MarkdownParser.parse("👨‍💻 developer").unwrap();
         let text = extract_text(&result);
         assert!(text.contains("👨‍💻"));
     }
 
-    // Tests avancés - Multi-lignes
+    // ── Multi-line ───────────────────────────────────────────────────────────
+
     #[test]
-    fn deux_paragraphes_produisent_deux_containers() {
-        let input = "Première ligne\nDeuxième ligne";
+    fn two_paragraphs_produce_three_nodes() {
+        let input = "First line\nSecond line";
         let result = MarkdownParser.parse(input).unwrap();
         // text + \n node + text = 3 nodes
         assert_eq!(result.len(), 3);
     }
 
     #[test]
-    fn paragraphe_suivi_de_liste() {
+    fn paragraph_followed_by_list() {
         let input = "Introduction\n- item A\n- item B";
         let result = MarkdownParser.parse(input).unwrap();
         // text + \n node + list = 3 nodes
@@ -602,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn liste_suivie_de_texte() {
+    fn list_followed_by_text() {
         let input = "- item A\n- item B\nConclusion";
         let result = MarkdownParser.parse(input).unwrap();
         // list + \n node + text = 3 nodes
@@ -612,8 +623,8 @@ mod tests {
     }
 
     #[test]
-    fn citation_entre_deux_paragraphes_produit_erreur() {
-        let input = "Intro\n> Une pensée\nConclusion";
+    fn blockquote_between_paragraphs_produces_error() {
+        let input = "Intro\n> A thought\nConclusion";
         let result = MarkdownParser.parse(input);
         assert!(
             matches!(result, Err(ParseError::UnsupportedSymbol { symbol, .. }) if symbol == ">")
@@ -621,8 +632,8 @@ mod tests {
     }
 
     #[test]
-    fn lignes_vides_entre_blocs_ignorees() {
-        let input = "Paragraphe 1\n\n\nParagraphe 2";
+    fn blank_lines_between_blocks_ignored() {
+        let input = "Paragraph 1\n\n\nParagraph 2";
         let result = MarkdownParser.parse(input).unwrap();
         // \n nodes have a single Text child containing "\n" — exclude them
         let content_nodes: Vec<_> = result
@@ -636,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn cinq_items_de_liste_non_ordonnee() {
+    fn five_unordered_list_items() {
         let input = "- A\n- B\n- C\n- D\n- E";
         let result = MarkdownParser.parse(input).unwrap();
         assert_eq!(result.len(), 1);
@@ -650,8 +661,8 @@ mod tests {
     }
 
     #[test]
-    fn liste_ordonnee_longue() {
-        let input = "1. Premier\n2. Deuxième\n3. Troisième\n4. Quatrième\n5. Cinquième";
+    fn long_ordered_list() {
+        let input = "1. First\n2. Second\n3. Third\n4. Fourth\n5. Fifth";
         let result = MarkdownParser.parse(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].container_type, ContainerType::OrderedList);
@@ -663,10 +674,11 @@ mod tests {
         assert_eq!(list_items, 5);
     }
 
-    // Tests avancés - Combinaisons de styles
+    // ── Style combinations ───────────────────────────────────────────────────
+
     #[test]
-    fn gras_et_italique_sur_mots_differents() {
-        let result = MarkdownParser.parse("**gras** et *italique*").unwrap();
+    fn bold_and_italic_on_different_words() {
+        let result = MarkdownParser.parse("**bold** and *italic*").unwrap();
         let root = &result[0];
         let has_bold = root.children.iter().any(
             |n| matches!(n, InlineNode::Container(c) if c.container_type == ContainerType::Bold),
@@ -679,23 +691,29 @@ mod tests {
     }
 
     #[test]
-    fn trois_styles_differents_sur_une_ligne() {
+    fn three_styles_on_one_line() {
         let result = MarkdownParser
-            .parse("**gras** *italique* ~~barré~~")
+            .parse("**bold** *italic* ~~strike~~")
             .unwrap();
         let root = &result[0];
-        let bold_count = count_children_of_type(&root.children, ContainerType::Bold);
-        let italic_count = count_children_of_type(&root.children, ContainerType::Italic);
-        let strike_count = count_children_of_type(&root.children, ContainerType::Strikethrough);
-        assert_eq!(bold_count, 1);
-        assert_eq!(italic_count, 1);
-        assert_eq!(strike_count, 1);
+        assert_eq!(
+            count_children_of_type(&root.children, ContainerType::Bold),
+            1
+        );
+        assert_eq!(
+            count_children_of_type(&root.children, ContainerType::Italic),
+            1
+        );
+        assert_eq!(
+            count_children_of_type(&root.children, ContainerType::Strikethrough),
+            1
+        );
     }
 
     #[test]
-    fn gras_barré_surligné_sur_mots_differents() {
+    fn bold_strikethrough_highlight_on_different_words() {
         let result = MarkdownParser
-            .parse("**important** ~~obsolète~~ ==nouveau==")
+            .parse("**important** ~~obsolete~~ ==new==")
             .unwrap();
         let root = &result[0];
         assert!(count_children_of_type(&root.children, ContainerType::Bold) >= 1);
@@ -704,15 +722,15 @@ mod tests {
     }
 
     #[test]
-    fn texte_avant_et_apres_le_style() {
-        let result = MarkdownParser.parse("Voir le mot **clé** ici").unwrap();
+    fn text_before_and_after_style() {
+        let result = MarkdownParser.parse("See the **key** word here").unwrap();
         let root = &result[0];
         assert!(root.children.len() >= 3);
     }
 
     #[test]
-    fn style_en_tout_debut_de_ligne() {
-        let result = MarkdownParser.parse("**Titre de post**").unwrap();
+    fn style_at_line_start() {
+        let result = MarkdownParser.parse("**Post title**").unwrap();
         let root = &result[0];
         assert_eq!(root.children.len(), 1);
         assert!(
@@ -721,10 +739,8 @@ mod tests {
     }
 
     #[test]
-    fn style_en_toute_fin_de_ligne() {
-        let result = MarkdownParser
-            .parse("Texte normal puis *italique*")
-            .unwrap();
+    fn style_at_line_end() {
+        let result = MarkdownParser.parse("Normal text then *italic*").unwrap();
         let root = &result[0];
         let last = root.children.last().unwrap();
         assert!(
@@ -732,11 +748,12 @@ mod tests {
         );
     }
 
-    // Tests avancés - Imbrications profondes
+    // ── Deep nesting ─────────────────────────────────────────────────────────
+
     #[test]
-    fn triple_imbrication_gras_italique_surligné() {
+    fn triple_nesting_bold_italic_highlight() {
         let result = MarkdownParser
-            .parse("**gras *italique ==surligné== fin* fin**")
+            .parse("**bold *italic ==highlight== end* end**")
             .unwrap();
         let root = &result[0];
         let bold = root.children.iter().find_map(|n| {
@@ -754,7 +771,7 @@ mod tests {
     }
 
     #[test]
-    fn gras_avec_deux_mots_italiques_dedans() {
+    fn bold_with_two_nested_italics() {
         let result = MarkdownParser
             .parse("**Hello *world* and *Rust***")
             .unwrap();
@@ -764,8 +781,8 @@ mod tests {
     }
 
     #[test]
-    fn liste_avec_items_styles() {
-        let input = "- **important**\n- *note*\n- texte normal";
+    fn list_with_styled_items() {
+        let input = "- **important**\n- *note*\n- plain text";
         let result = MarkdownParser.parse(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].container_type, ContainerType::List);
@@ -777,10 +794,11 @@ mod tests {
         assert_eq!(list_items, 3);
     }
 
-    // Tests avancés - Posts LinkedIn réalistes
+    // ── Realistic posts ──────────────────────────────────────────────────────
+
     #[test]
-    fn post_linkedin_annonce_simple() {
-        let input = "\n🎉 **Bonne nouvelle !**\nJe viens de rejoindre une nouvelle aventure professionnelle.\n\nAprès 3 ans chez mon ancienne entreprise, il est temps de relever de nouveaux défis.\n\n*Merci à toute mon équipe pour ces années inoubliables.*";
+    fn post_simple_announcement() {
+        let input = "\n🎉 **Great news!**\nI just joined a new professional adventure.\n\nAfter 3 years at my previous company, it's time for new challenges.\n\n*Thank you to my whole team for these unforgettable years.*";
 
         let result = MarkdownParser.parse(input).unwrap();
         assert!(result.len() >= 3);
@@ -791,8 +809,8 @@ mod tests {
     }
 
     #[test]
-    fn post_linkedin_liste_apprentissages() {
-        let input = "\nCe que j'ai appris cette année :\n\n- **Rust** est incroyable pour les performances\n- *La documentation* est aussi importante que le code\n- ~~Les réunions inutiles~~ Le focus, c'est précieux\n- ==La communauté== fait toute la différence 🙏";
+    fn post_list_of_learnings() {
+        let input = "\nWhat I learned this year:\n\n- **Rust** is amazing for performance\n- *Documentation* matters as much as code\n- ~~Useless meetings~~ Focus is precious\n- ==The community== makes all the difference 🙏";
 
         let result = MarkdownParser.parse(input).unwrap();
         assert!(result.len() >= 2);
@@ -807,8 +825,8 @@ mod tests {
     }
 
     #[test]
-    fn post_linkedin_citation_et_liste_produit_erreur() {
-        let input = "\n> \"Le code propre n'est pas écrit en suivant un ensemble de règles.\"\n\nMes 3 principes :\n\n1. Nommer les choses clairement\n2. Faire une chose à la fois\n3. Tester avant de déployer 🚀";
+    fn post_blockquote_and_list_produces_error() {
+        let input = "\n> \"Clean code is not written by following a set of rules.\"\n\nMy 3 principles:\n\n1. Name things clearly\n2. Do one thing at a time\n3. Test before deploying 🚀";
 
         let result = MarkdownParser.parse(input);
         assert!(
@@ -817,23 +835,22 @@ mod tests {
     }
 
     #[test]
-    fn post_linkedin_long_avec_styles_et_liste() {
-        let input = "\n🚀 **3 ans de freelance : ce que personne ne vous dit**\n\nQuand j'ai commencé, je pensais que la technique était le plus dur.\nJ'avais *complètement* tort.\n\nVoici ce que j'ai vraiment appris :\n\n- **Trouver des clients** est un métier à part entière\n- La facturation, ~~personne~~ vraiment personne ne vous apprend ça\n- ==Votre réputation== vaut plus que n'importe quel CV\n- *La solitude* du freelance est réelle 🧘\n\n**Et vous, qu'est-ce qui vous a le plus surpris ?** 👇";
+    fn long_post_with_styles_and_list() {
+        let input = "\n🚀 **3 years of freelance: what nobody tells you**\n\nWhen I started, I thought the technical part was the hardest.\nI was *completely* wrong.\n\nHere's what I really learned:\n\n- **Finding clients** is a full-time job on its own\n- Invoicing: ~~nobody~~ literally nobody teaches you that\n- ==Your reputation== is worth more than any resume\n- *The loneliness* of freelance is real 🧘\n\n**And you, what surprised you the most?** 👇";
 
         let result = MarkdownParser.parse(input).unwrap();
         assert!(
             result.len() >= 4,
-            "Attendu au moins 4 blocs, obtenu {}",
+            "Expected at least 4 blocks, got {}",
             result.len()
         );
-
         let types: Vec<&ContainerType> = result.iter().map(|n| &n.container_type).collect();
         assert!(types.contains(&&ContainerType::List));
     }
 
     #[test]
-    fn post_linkedin_chiffres_et_pourcentages() {
-        let input = "En **2024**, j'ai livré *47 projets* avec un taux de satisfaction de ==98%==.";
+    fn post_numbers_and_percentages() {
+        let input = "In **2024**, I delivered *47 projects* with ==98%== satisfaction.";
         let result = MarkdownParser.parse(input).unwrap();
         assert_eq!(result.len(), 1);
         let root = &result[0];
@@ -843,44 +860,45 @@ mod tests {
     }
 
     #[test]
-    fn post_avec_accents_dans_styles() {
-        let input = "**Développeur** passionné par l'*élégance* du code.";
+    fn post_with_accented_chars_in_styles() {
+        let input = "**Developer** passionate about *elegance* in code.";
         let result = MarkdownParser.parse(input).unwrap();
         assert!(!result.is_empty());
         let bold = find_container(&result, ContainerType::Bold).unwrap();
         let text = extract_text_from_container(bold);
-        assert!(text.contains("Développeur"));
+        assert!(text.contains("Developer"));
     }
 
     #[test]
-    fn post_avec_ponctuation_speciale() {
-        let input = "**L'innovation** — c'est aussi *oser dire non* à l'inutile…";
+    fn post_with_special_punctuation() {
+        let input = "**Innovation** — it's also *daring to say no* to the useless…";
         let result = MarkdownParser.parse(input).unwrap();
         assert!(!result.is_empty());
     }
 
-    // Tests avancés - Cas limites et robustesse
+    // ── Robustness ───────────────────────────────────────────────────────────
+
     #[test]
-    fn marqueur_gras_vide_produit_container_bold_sans_enfants() {
+    fn empty_bold_marker_handled() {
         let result = MarkdownParser.parse("****");
         let _ = result;
     }
 
     #[test]
-    fn underscore_dans_mot_compose_ne_declenche_pas_italique() {
+    fn underscore_in_compound_word_does_not_trigger_italic() {
         let result = MarkdownParser.parse("snake_case_variable");
         let _ = result;
     }
 
     #[test]
-    fn ligne_avec_uniquement_des_espaces_ignoree() {
+    fn line_with_only_spaces_ignored() {
         let result = MarkdownParser.parse("   \t   ").unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
-    fn texte_avec_retour_chariot_windows() {
-        let result = MarkdownParser.parse("ligne1\r\nligne2");
+    fn windows_line_endings_handled() {
+        let result = MarkdownParser.parse("line1\r\nline2");
         assert!(result.is_ok());
         let nodes = result.unwrap();
         // text + \n node + text = 3 nodes
@@ -888,7 +906,7 @@ mod tests {
     }
 
     #[test]
-    fn tres_longue_ligne_sans_marqueur() {
+    fn very_long_line_without_marker() {
         let long_line = "a".repeat(10_000);
         let result = MarkdownParser.parse(&long_line).unwrap();
         assert_eq!(result.len(), 1);
@@ -896,26 +914,24 @@ mod tests {
     }
 
     #[test]
-    fn marqueur_gras_sur_plusieurs_mots_avec_espaces() {
-        let result = MarkdownParser
-            .parse("**bonjour monde comment vas tu**")
-            .unwrap();
+    fn bold_marker_spanning_multiple_words() {
+        let result = MarkdownParser.parse("**hello world how are you**").unwrap();
         let bold = find_container(&result, ContainerType::Bold).unwrap();
         let text = extract_text_from_container(bold);
-        assert_eq!(text, "bonjour monde comment vas tu");
+        assert_eq!(text, "hello world how are you");
     }
 
     #[test]
-    fn citation_avec_style_inline_produit_erreur() {
-        let result = MarkdownParser.parse("> **Citation importante** de quelqu'un");
+    fn blockquote_with_inline_style_produces_error() {
+        let result = MarkdownParser.parse("> **Important quote** from someone");
         assert!(
             matches!(result, Err(ParseError::UnsupportedSymbol { symbol, .. }) if symbol == ">")
         );
     }
 
     #[test]
-    fn liste_avec_emojis_en_items() {
-        let input = "- 🎯 Objectif 1\n- 🚀 Lancement\n- ✅ Terminé";
+    fn list_with_emoji_items() {
+        let input = "- 🎯 Goal 1\n- 🚀 Launch\n- ✅ Done";
         let result = MarkdownParser.parse(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].container_type, ContainerType::List);
@@ -928,8 +944,8 @@ mod tests {
     }
 
     #[test]
-    fn erreur_premier_symbole_non_supporte_arrete_le_parsing() {
-        let input = "texte valide\n# titre invalide\nautres lignes valides";
+    fn first_unsupported_symbol_stops_parsing() {
+        let input = "valid text\n# invalid heading\nother valid lines";
         let result = MarkdownParser.parse(input);
         assert!(result.is_err());
     }

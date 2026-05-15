@@ -82,27 +82,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn span_len_calcule_correctement() {
+    fn span_len_computed_correctly() {
         let s = Span::new(3, 10);
         assert_eq!(s.len(), 7);
     }
 
     #[test]
-    fn span_vide_detecte() {
+    fn empty_span_detected() {
         let s = Span::new(5, 5);
         assert!(s.is_empty());
     }
 
     #[test]
-    fn span_len_sature_si_end_inferieur_a_start() {
-        // saturating_sub : pas de panique si end < start
+    fn span_len_saturates_if_end_before_start() {
+        // saturating_sub: no panic if end < start
         let s = Span::new(10, 5);
         assert_eq!(s.len(), 0);
         assert!(s.is_empty());
     }
 
     #[test]
-    fn container_node_children_vide_par_defaut() {
+    fn container_node_children_empty_by_default() {
         let node = ContainerNode {
             base: NodeBase::new(0, Span::new(0, 0)),
             container_type: ContainerType::Text,
@@ -112,7 +112,7 @@ mod tests {
     }
 
     #[test]
-    fn inline_node_base_retourne_bonne_reference() {
+    fn inline_node_base_returns_correct_reference() {
         let text_node = TextNode {
             base: NodeBase::new(42, Span::new(1, 5)),
             text: "hello".to_string(),

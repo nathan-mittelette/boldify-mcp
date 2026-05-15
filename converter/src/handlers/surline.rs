@@ -1,11 +1,11 @@
-use once_cell::sync::OnceCell;
-use unicode_segmentation::UnicodeSegmentation;
+use std::sync::OnceLock;
 
 use super::handler::FontHandler;
+use super::shared::apply_combining_mark;
 
 pub struct SurlineHandler;
 
-static INSTANCE: OnceCell<SurlineHandler> = OnceCell::new();
+static INSTANCE: OnceLock<SurlineHandler> = OnceLock::new();
 
 pub fn surline_handler() -> &'static SurlineHandler {
     INSTANCE.get_or_init(|| SurlineHandler)
@@ -13,15 +13,7 @@ pub fn surline_handler() -> &'static SurlineHandler {
 
 impl FontHandler for SurlineHandler {
     fn apply(&self, text: &str) -> String {
-        text.graphemes(true)
-            .map(|g| {
-                if g == " " || g == "\n" {
-                    g.to_string()
-                } else {
-                    format!("{}\u{0305}", g)
-                }
-            })
-            .collect()
+        apply_combining_mark(text, "\u{0305}")
     }
 }
 
@@ -30,7 +22,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn surline_ajoute_combining_overline_a_chaque_char() {
+    fn surline_adds_combining_overline_to_each_char() {
         let result = SurlineHandler.apply("AB");
         let chars: Vec<char> = result.chars().collect();
         assert_eq!(chars[1], '\u{0305}');
@@ -38,24 +30,24 @@ mod tests {
     }
 
     #[test]
-    fn surline_preserve_espace() {
+    fn surline_preserves_space() {
         assert_eq!(SurlineHandler.apply(" "), " ");
     }
 
     #[test]
-    fn surline_preserve_newline() {
+    fn surline_preserves_newline() {
         assert_eq!(SurlineHandler.apply("\n"), "\n");
     }
 
     #[test]
-    fn surline_avec_emoji() {
+    fn surline_with_emoji() {
         let result = SurlineHandler.apply("🚀 go");
         assert!(result.contains("🚀"));
         assert!(result.contains(' '));
     }
 
     #[test]
-    fn surline_texte_vide() {
+    fn surline_empty_string() {
         let result = SurlineHandler.apply("");
         assert_eq!(result, "");
     }

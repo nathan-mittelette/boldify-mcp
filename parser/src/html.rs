@@ -1,3 +1,11 @@
+//! HTML parser — converts a subset of HTML into an AST.
+//!
+//! Supported tags: `<b>`, `<strong>`, `<i>`, `<em>`, `<u>`, `<mark>`, `<s>`,
+//! `<del>`, `<ul>`, `<ol>`, `<li>`, `<p>`, `<br>`.  All other tags, including
+//! `<div>`, `<span>`, `<blockquote>`, and heading tags, produce
+//! [`ParseError::UnsupportedSymbol`].  HTML comments and `<!DOCTYPE …>` are
+//! silently skipped.
+
 use crate::{
     ast::{ContainerNode, ContainerType, InlineNode, ListItemNode, NodeBase, Span, TextNode},
     error::{ParseError, SourcePosition},
@@ -20,6 +28,42 @@ struct OpenTag {
     opened_at: SourcePosition,
 }
 
+struct PositionTracker {
+    line: usize,
+    col: usize,
+}
+
+impl PositionTracker {
+    fn new() -> Self {
+        Self { line: 1, col: 1 }
+    }
+
+    fn advance_str(&mut self, s: &str) {
+        for c in s.chars() {
+            self.advance_char(c);
+        }
+    }
+
+    fn advance_char(&mut self, c: char) {
+        if c == '\n' {
+            self.line += 1;
+            self.col = 1;
+        } else {
+            self.col += 1;
+        }
+    }
+
+    fn current(&self, byte_offset: usize) -> SourcePosition {
+        SourcePosition {
+            line: self.line,
+            column: self.col,
+            byte_offset,
+        }
+    }
+}
+
+const MAX_DEPTH: usize = 64;
+
 impl Parser for HtmlParser {
     fn parse(&self, input: &str) -> Result<Vec<ContainerNode>, ParseError> {
         if input.is_empty() {
@@ -30,119 +74,60 @@ impl Parser for HtmlParser {
         let mut result: Vec<ContainerNode> = Vec::new();
         let mut text_buf = String::new();
         let mut id_gen = NodeIdGen::new();
+        let mut pos = PositionTracker::new();
 
         let bytes = input.as_bytes();
         let mut i = 0;
-        let mut line = 1usize;
-        let mut col = 1usize;
 
         while i < input.len() {
-            if bytes[i] == b'<' {
-                flush_text(&mut text_buf, &mut stack, &mut result, i, &mut id_gen);
-
-                let rest = &input[i..];
-
-                // HTML comment <!-- ... -->
-                if rest.starts_with("<!--") {
-                    let end = rest.find("-->").map(|p| i + p + 3).unwrap_or(input.len());
-                    advance_pos(&input[i..end], &mut line, &mut col);
-                    i = end;
-                    continue;
-                }
-
-                // DOCTYPE <!...>
-                if rest.starts_with("<!") {
-                    let end = rest.find('>').map(|p| i + p + 1).unwrap_or(input.len());
-                    advance_pos(&input[i..end], &mut line, &mut col);
-                    i = end;
-                    continue;
-                }
-
-                let pos = SourcePosition {
-                    line,
-                    column: col,
-                    byte_offset: i,
-                };
-
-                // Closing tag </tag>
-                if rest.starts_with("</") {
-                    let (tag_name, tag_end) = extract_tag_name(&input[i + 2..]);
-                    let abs_end = i + 2 + tag_end;
-
-                    // </p> at root: no \n emitted — \n is only emitted on <p> opening
-                    if tag_name != "p" || !stack.is_empty() {
-                        pop_tag(&tag_name, &mut stack, &mut result, &mut id_gen);
-                    }
-
-                    advance_pos(&input[i..abs_end], &mut line, &mut col);
-                    i = abs_end;
-                    continue;
-                }
-
-                // Opening tag <tag ...>
-                let (tag_name, attrs_and_rest) = extract_tag_name(&input[i + 1..]);
-                let tag_end = i + 1 + attrs_and_rest;
-
-                // Check for self-closing />
-                let is_self_closing = input[i + 1..tag_end.min(input.len())]
-                    .trim_end()
-                    .ends_with('/');
-
-                match tag_name.as_str() {
-                    "br" if is_self_closing || tag_name == "br" => {
-                        push_newline(&mut stack, &mut result, &mut id_gen);
-                    }
-                    "p" => {
-                        // <p> at root: \n before content if not the very first element
-                        if stack.is_empty() && result_has_content(&result) {
-                            push_newline(&mut stack, &mut result, &mut id_gen);
-                        }
-                    }
-                    _ => match tag_to_kind(&tag_name) {
-                        Some(kind) => {
-                            // List at root: \n before if not the very first element
-                            if stack.is_empty()
-                                && result_has_content(&result)
-                                && matches!(
-                                    kind,
-                                    TagKind::Container(ContainerType::List)
-                                        | TagKind::Container(ContainerType::OrderedList)
-                                )
-                            {
-                                push_newline(&mut stack, &mut result, &mut id_gen);
-                            }
-                            stack.push(OpenTag {
-                                kind,
-                                tag_name: tag_name.clone(),
-                                children: Vec::new(),
-                                opened_at: pos,
-                            });
-                        }
-                        None => {
-                            return Err(ParseError::UnsupportedSymbol {
-                                symbol: format!("<{}>", tag_name),
-                                position: pos,
-                            });
-                        }
-                    },
-                }
-
-                advance_pos(&input[i..tag_end], &mut line, &mut col);
-                i = tag_end;
-            } else {
+            if bytes[i] != b'<' {
                 let c = input[i..].chars().next().unwrap();
-                // At root level, discard only \n/\r between block tags — preserve spaces in content
+                // At root level, discard only \n/\r between block tags
                 if !stack.is_empty() || (c != '\n' && c != '\r') {
                     text_buf.push(c);
                 }
-                if c == '\n' {
-                    line += 1;
-                    col = 1;
-                } else {
-                    col += 1;
-                }
+                pos.advance_char(c);
                 i += c.len_utf8();
+                continue;
             }
+
+            flush_text(&mut text_buf, &mut stack, &mut result, i, &mut id_gen);
+
+            let rest = &input[i..];
+            let tag_pos = pos.current(i);
+
+            if let Some(end) = skip_comment_or_doctype(rest, i) {
+                pos.advance_str(&input[i..end]);
+                i = end;
+                continue;
+            }
+
+            if rest.starts_with("</") {
+                let (tag_name, tag_end) = extract_tag_name(&input[i + 2..]);
+                let abs_end = i + 2 + tag_end;
+                process_close_tag(&tag_name, &mut stack, &mut result, &mut id_gen);
+                pos.advance_str(&input[i..abs_end]);
+                i = abs_end;
+                continue;
+            }
+
+            let (tag_name, tag_end) = extract_tag_name(&input[i + 1..]);
+            let abs_tag_end = i + 1 + tag_end;
+            let is_self_closing = input[i + 1..abs_tag_end.min(input.len())]
+                .trim_end()
+                .ends_with('/');
+
+            process_open_tag(
+                &tag_name,
+                is_self_closing,
+                tag_pos,
+                &mut stack,
+                &mut result,
+                &mut id_gen,
+            )?;
+
+            pos.advance_str(&input[i..abs_tag_end]);
+            i = abs_tag_end;
         }
 
         flush_text(
@@ -156,7 +141,7 @@ impl Parser for HtmlParser {
         if let Some(unclosed) = stack.last() {
             return Err(ParseError::UnclosedTag {
                 tag: unclosed.tag_name.clone(),
-                position: unclosed.opened_at.clone(),
+                position: unclosed.opened_at,
             });
         }
 
@@ -165,20 +150,118 @@ impl Parser for HtmlParser {
 
     fn supported_symbols(&self) -> Vec<SupportedSymbol> {
         vec![
-            sym("<strong>", "Gras", "<strong>texte</strong>"),
-            sym("<b>", "Gras (alias)", "<b>texte</b>"),
-            sym("<em>", "Italique", "<em>texte</em>"),
-            sym("<i>", "Italique (alias)", "<i>texte</i>"),
-            sym("<u>", "Souligné", "<u>texte</u>"),
-            sym("<mark>", "Surligné", "<mark>texte</mark>"),
-            sym("<s>", "Texte barré", "<s>texte</s>"),
-            sym("<del>", "Texte barré (alias)", "<del>texte</del>"),
-            sym("<ul>", "Liste non ordonnée", "<ul><li>item</li></ul>"),
-            sym("<ol>", "Liste ordonnée", "<ol><li>item</li></ol>"),
-            sym("<li>", "Item de liste", "<li>contenu</li>"),
-            sym("<br>", "Saut de ligne", "<br>"),
+            sym("<strong>", "Bold", "<strong>text</strong>"),
+            sym("<b>", "Bold (alias)", "<b>text</b>"),
+            sym("<em>", "Italic", "<em>text</em>"),
+            sym("<i>", "Italic (alias)", "<i>text</i>"),
+            sym("<u>", "Underline", "<u>text</u>"),
+            sym("<mark>", "Highlight", "<mark>text</mark>"),
+            sym("<s>", "Strikethrough", "<s>text</s>"),
+            sym("<del>", "Strikethrough (alias)", "<del>text</del>"),
+            sym("<ul>", "Unordered list", "<ul><li>item</li></ul>"),
+            sym("<ol>", "Ordered list", "<ol><li>item</li></ol>"),
+            sym("<li>", "List item", "<li>content</li>"),
+            sym("<br>", "Line break", "<br>"),
         ]
     }
+}
+
+/// Returns the absolute end index to skip past a `<!-- -->` comment or `<!...>` doctype.
+/// Returns `None` if the input does not start with either construct.
+fn skip_comment_or_doctype(rest: &str, base: usize) -> Option<usize> {
+    if rest.starts_with("<!--") {
+        let end = rest
+            .find("-->")
+            .map(|p| base + p + 3)
+            .unwrap_or(base + rest.len());
+        return Some(end);
+    }
+    if rest.starts_with("<!") {
+        let end = rest
+            .find('>')
+            .map(|p| base + p + 1)
+            .unwrap_or(base + rest.len());
+        return Some(end);
+    }
+    None
+}
+
+fn process_close_tag(
+    tag_name: &str,
+    stack: &mut Vec<OpenTag>,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) {
+    // </p> at root: no \n emitted — \n is only emitted on <p> opening
+    if tag_name != "p" || !stack.is_empty() {
+        pop_tag(tag_name, stack, result, id_gen);
+    }
+}
+
+fn process_open_tag(
+    tag_name: &str,
+    is_self_closing: bool,
+    pos: SourcePosition,
+    stack: &mut Vec<OpenTag>,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) -> Result<(), ParseError> {
+    match tag_name {
+        "br" => {
+            push_newline(stack, result, id_gen);
+        }
+        "p" => {
+            if stack.is_empty() && result_has_content(result) {
+                push_newline(stack, result, id_gen);
+            }
+        }
+        _ if is_self_closing => {}
+        _ => match tag_to_kind(tag_name) {
+            Some(kind) => push_open_tag(kind, tag_name, pos, stack, result, id_gen)?,
+            None => {
+                return Err(ParseError::UnsupportedSymbol {
+                    symbol: format!("<{}>", tag_name),
+                    position: pos,
+                });
+            }
+        },
+    }
+    Ok(())
+}
+
+fn push_open_tag(
+    kind: TagKind,
+    tag_name: &str,
+    pos: SourcePosition,
+    stack: &mut Vec<OpenTag>,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) -> Result<(), ParseError> {
+    // List at root: \n before if not the very first element
+    if stack.is_empty()
+        && result_has_content(result)
+        && matches!(
+            kind,
+            TagKind::Container(ContainerType::List)
+                | TagKind::Container(ContainerType::OrderedList)
+        )
+    {
+        push_newline(stack, result, id_gen);
+    }
+    let new_depth = stack.len() + 1;
+    if new_depth > MAX_DEPTH {
+        return Err(ParseError::NestingTooDeep {
+            depth: new_depth,
+            max: MAX_DEPTH,
+        });
+    }
+    stack.push(OpenTag {
+        kind,
+        tag_name: tag_name.to_string(),
+        children: Vec::new(),
+        opened_at: pos,
+    });
+    Ok(())
 }
 
 fn sym(symbol: &str, description: &str, example: &str) -> SupportedSymbol {
@@ -195,7 +278,6 @@ fn extract_tag_name(s: &str) -> (String, usize) {
     let mut name = String::new();
     let mut chars = s.char_indices();
 
-    // Collect tag name characters (letters, digits, hyphens)
     for (_, c) in chars.by_ref() {
         if c.is_alphanumeric() || c == '-' || c == '_' {
             name.push(c.to_ascii_lowercase());
@@ -204,7 +286,6 @@ fn extract_tag_name(s: &str) -> (String, usize) {
         }
     }
 
-    // Advance to closing '>'
     let close = s.find('>').map(|p| p + 1).unwrap_or(s.len());
     (name, close)
 }
@@ -232,17 +313,6 @@ fn result_has_content(result: &[ContainerNode]) -> bool {
             _ => true,
         }),
     })
-}
-
-fn advance_pos(s: &str, line: &mut usize, col: &mut usize) {
-    for c in s.chars() {
-        if c == '\n' {
-            *line += 1;
-            *col = 1;
-        } else {
-            *col += 1;
-        }
-    }
 }
 
 /// Push a `\n` TextNode into the current context (stack top or root result).
@@ -321,76 +391,83 @@ fn pop_tag(
     let pos = stack.iter().rposition(|t| t.tag_name == tag_name);
     if let Some(idx) = pos {
         let open = stack.remove(idx);
-        let children = open.children;
-
-        let node = match open.kind {
-            TagKind::ListItem => InlineNode::ListItem(ListItemNode {
-                base: NodeBase::new(id_gen.next_id(), Span::new(0, 0)),
-                children,
-            }),
-            TagKind::Container(ct) => InlineNode::Container(ContainerNode {
-                base: NodeBase::new(id_gen.next_id(), Span::new(0, 0)),
-                container_type: ct,
-                children,
-            }),
-        };
-
-        if let Some(parent) = stack.last_mut() {
-            parent.children.push(node);
-        } else {
-            match node {
-                InlineNode::Container(c) => {
-                    let is_block = matches!(
-                        c.container_type,
-                        ContainerType::List
-                            | ContainerType::OrderedList
-                            | ContainerType::Blockquote
-                    );
-                    if is_block {
-                        result.push(c);
-                    } else {
-                        // Inline container at root: merge into last Text node
-                        if let Some(last) = result.last_mut() {
-                            if last.container_type == ContainerType::Text {
-                                last.children.push(InlineNode::Container(c));
-                                return;
-                            }
-                        }
-                        let id = id_gen.next_id();
-                        result.push(ContainerNode {
-                            base: NodeBase::new(id, Span::new(0, 0)),
-                            container_type: ContainerType::Text,
-                            children: vec![InlineNode::Container(c)],
-                        });
-                    }
-                }
-                InlineNode::ListItem(li) => {
-                    let id = id_gen.next_id();
-                    result.push(ContainerNode {
-                        base: NodeBase::new(id, Span::new(0, 0)),
-                        container_type: ContainerType::Text,
-                        children: vec![InlineNode::ListItem(li)],
-                    });
-                }
-                InlineNode::Text(t) => {
-                    // Merge into last Text node
-                    if let Some(last) = result.last_mut() {
-                        if last.container_type == ContainerType::Text {
-                            last.children.push(InlineNode::Text(t));
-                            return;
-                        }
-                    }
-                    let id = id_gen.next_id();
-                    result.push(ContainerNode {
-                        base: NodeBase::new(id, Span::new(0, 0)),
-                        container_type: ContainerType::Text,
-                        children: vec![InlineNode::Text(t)],
-                    });
-                }
-            }
-        }
+        let node = close_open_tag(open, id_gen);
+        attach_closed_node(node, stack, result, id_gen);
     }
     // Stray closing tag — silently ignore
+}
+
+fn close_open_tag(open: OpenTag, id_gen: &mut NodeIdGen) -> InlineNode {
+    match open.kind {
+        TagKind::ListItem => InlineNode::ListItem(ListItemNode {
+            base: NodeBase::new(id_gen.next_id(), Span::new(0, 0)),
+            children: open.children,
+        }),
+        TagKind::Container(ct) => InlineNode::Container(ContainerNode {
+            base: NodeBase::new(id_gen.next_id(), Span::new(0, 0)),
+            container_type: ct,
+            children: open.children,
+        }),
+    }
+}
+
+fn attach_closed_node(
+    node: InlineNode,
+    stack: &mut [OpenTag],
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) {
+    if let Some(parent) = stack.last_mut() {
+        parent.children.push(node);
+        return;
+    }
+    attach_to_root(node, result, id_gen);
+}
+
+fn attach_to_root(node: InlineNode, result: &mut Vec<ContainerNode>, id_gen: &mut NodeIdGen) {
+    match node {
+        InlineNode::Container(c) => attach_container_to_root(c, result, id_gen),
+        InlineNode::ListItem(li) => {
+            let id = id_gen.next_id();
+            result.push(ContainerNode {
+                base: NodeBase::new(id, Span::new(0, 0)),
+                container_type: ContainerType::Text,
+                children: vec![InlineNode::ListItem(li)],
+            });
+        }
+        InlineNode::Text(t) => merge_or_push_text(InlineNode::Text(t), result, id_gen),
+    }
+}
+
+fn attach_container_to_root(
+    c: ContainerNode,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) {
+    let is_block = matches!(
+        c.container_type,
+        ContainerType::List | ContainerType::OrderedList | ContainerType::Blockquote
+    );
+    if is_block {
+        result.push(c);
+    } else {
+        merge_or_push_text(InlineNode::Container(c), result, id_gen);
+    }
+}
+
+fn merge_or_push_text(node: InlineNode, result: &mut Vec<ContainerNode>, id_gen: &mut NodeIdGen) {
+    if let Some(last) = result.last_mut() {
+        if last.container_type == ContainerType::Text {
+            last.children.push(node);
+            return;
+        }
+    }
+    let id = id_gen.next_id();
+    result.push(ContainerNode {
+        base: NodeBase::new(id, Span::new(0, 0)),
+        container_type: ContainerType::Text,
+        children: vec![node],
+    });
 }
 
 #[cfg(test)]
@@ -448,73 +525,73 @@ mod tests {
         None
     }
 
-    // ── Cas nominaux ────────────────────────────────────────────────────────
+    // ── Happy path ───────────────────────────────────────────────────────────
 
     #[test]
-    fn texte_brut_produit_container_text() {
-        let result = HtmlParser.parse("Bonjour").unwrap();
+    fn plain_text_produces_text_container() {
+        let result = HtmlParser.parse("Hello").unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].container_type, ContainerType::Text);
-        assert_eq!(flatten_text(&result), "Bonjour");
+        assert_eq!(flatten_text(&result), "Hello");
     }
 
     #[test]
-    fn strong_produit_container_bold() {
+    fn strong_produces_bold_container() {
         let result = HtmlParser.parse("<strong>Hello</strong>").unwrap();
         assert!(find_node(&result, ContainerType::Bold).is_some());
         assert_eq!(flatten_text(&result), "Hello");
     }
 
     #[test]
-    fn b_produit_container_bold() {
+    fn b_produces_bold_container() {
         let result = HtmlParser.parse("<b>Hello</b>").unwrap();
         assert!(find_node(&result, ContainerType::Bold).is_some());
     }
 
     #[test]
-    fn em_produit_container_italic() {
-        let result = HtmlParser.parse("<em>monde</em>").unwrap();
+    fn em_produces_italic_container() {
+        let result = HtmlParser.parse("<em>world</em>").unwrap();
         assert!(find_node(&result, ContainerType::Italic).is_some());
     }
 
     #[test]
-    fn u_produit_container_underline() {
-        let result = HtmlParser.parse("<u>texte</u>").unwrap();
+    fn u_produces_underline_container() {
+        let result = HtmlParser.parse("<u>text</u>").unwrap();
         assert!(find_node(&result, ContainerType::Underline).is_some());
     }
 
     #[test]
-    fn mark_produit_container_surline() {
-        let result = HtmlParser.parse("<mark>texte</mark>").unwrap();
+    fn mark_produces_surline_container() {
+        let result = HtmlParser.parse("<mark>text</mark>").unwrap();
         assert!(find_node(&result, ContainerType::Surline).is_some());
     }
 
     #[test]
-    fn s_produit_container_strikethrough() {
-        let result = HtmlParser.parse("<s>texte</s>").unwrap();
+    fn s_produces_strikethrough_container() {
+        let result = HtmlParser.parse("<s>text</s>").unwrap();
         assert!(find_node(&result, ContainerType::Strikethrough).is_some());
     }
 
     #[test]
-    fn del_produit_container_strikethrough() {
-        let result = HtmlParser.parse("<del>texte</del>").unwrap();
+    fn del_produces_strikethrough_container() {
+        let result = HtmlParser.parse("<del>text</del>").unwrap();
         assert!(find_node(&result, ContainerType::Strikethrough).is_some());
     }
 
     #[test]
-    fn br_insere_newline() {
-        let result = HtmlParser.parse("ligne1<br>ligne2").unwrap();
-        assert_eq!(flatten_text(&result), "ligne1\nligne2");
+    fn br_inserts_newline() {
+        let result = HtmlParser.parse("line1<br>line2").unwrap();
+        assert_eq!(flatten_text(&result), "line1\nline2");
     }
 
     #[test]
-    fn p_transparent_et_fermeture_insere_newline() {
-        let result = HtmlParser.parse("<p>texte</p>").unwrap();
-        assert!(flatten_text(&result).contains("texte"));
+    fn p_is_transparent_and_closing_tag_inserts_newline() {
+        let result = HtmlParser.parse("<p>text</p>").unwrap();
+        assert!(flatten_text(&result).contains("text"));
     }
 
     #[test]
-    fn ul_li_produit_liste() {
+    fn ul_li_produces_list() {
         let result = HtmlParser.parse("<ul><li>a</li><li>b</li></ul>").unwrap();
         assert_eq!(result[0].container_type, ContainerType::List);
         let item_count = result[0]
@@ -526,41 +603,41 @@ mod tests {
     }
 
     #[test]
-    fn ol_li_produit_liste_ordonnee() {
-        let result = HtmlParser.parse("<ol><li>un</li></ol>").unwrap();
+    fn ol_li_produces_ordered_list() {
+        let result = HtmlParser.parse("<ol><li>one</li></ol>").unwrap();
         assert_eq!(result[0].container_type, ContainerType::OrderedList);
     }
 
     #[test]
-    fn imbrication_strong_dans_texte() {
+    fn strong_nested_in_plain_text() {
         let result = HtmlParser
-            .parse("texte <strong>gras</strong> suite")
+            .parse("text <strong>bold</strong> after")
             .unwrap();
         let text = flatten_text(&result);
-        assert!(text.contains("texte"));
-        assert!(text.contains("gras"));
-        assert!(text.contains("suite"));
+        assert!(text.contains("text"));
+        assert!(text.contains("bold"));
+        assert!(text.contains("after"));
         assert!(find_node(&result, ContainerType::Bold).is_some());
     }
 
     #[test]
-    fn blockquote_produit_erreur_unsupported() {
-        let result = HtmlParser.parse("<blockquote>citation</blockquote>");
+    fn blockquote_produces_unsupported_error() {
+        let result = HtmlParser.parse("<blockquote>quote</blockquote>");
         assert!(
             matches!(result, Err(ParseError::UnsupportedSymbol { ref symbol, .. }) if symbol == "<blockquote>")
         );
     }
 
-    // ── Commentaires et DOCTYPE ─────────────────────────────────────────────
+    // ── Comments and DOCTYPE ─────────────────────────────────────────────────
 
     #[test]
-    fn commentaire_html_ignore() {
-        let result = HtmlParser.parse("<!-- commentaire -->texte").unwrap();
-        assert_eq!(flatten_text(&result), "texte");
+    fn html_comment_is_ignored() {
+        let result = HtmlParser.parse("<!-- comment -->text").unwrap();
+        assert_eq!(flatten_text(&result), "text");
     }
 
     #[test]
-    fn doctype_ignore() {
+    fn doctype_is_ignored() {
         let result = HtmlParser
             .parse("<!DOCTYPE html><strong>X</strong>")
             .unwrap();
@@ -568,78 +645,78 @@ mod tests {
         assert_eq!(flatten_text(&result), "X");
     }
 
-    // ── Erreurs ─────────────────────────────────────────────────────────────
+    // ── Errors ───────────────────────────────────────────────────────────────
 
     #[test]
-    fn div_produit_erreur_unsupported() {
-        let result = HtmlParser.parse("<div>contenu</div>");
+    fn div_produces_unsupported_error() {
+        let result = HtmlParser.parse("<div>content</div>");
         assert!(
             matches!(result, Err(ParseError::UnsupportedSymbol { ref symbol, .. }) if symbol == "<div>")
         );
     }
 
     #[test]
-    fn span_produit_erreur_unsupported() {
+    fn span_produces_unsupported_error() {
         let result = HtmlParser.parse("<span>x</span>");
         assert!(matches!(result, Err(ParseError::UnsupportedSymbol { .. })));
     }
 
     #[test]
-    fn h1_produit_erreur_unsupported() {
-        let result = HtmlParser.parse("<h1>titre</h1>");
+    fn h1_produces_unsupported_error() {
+        let result = HtmlParser.parse("<h1>title</h1>");
         assert!(
             matches!(result, Err(ParseError::UnsupportedSymbol { ref symbol, .. }) if symbol == "<h1>")
         );
     }
 
     #[test]
-    fn balise_non_fermee_produit_erreur_unclosed() {
-        let result = HtmlParser.parse("<strong>non fermé");
+    fn unclosed_tag_produces_unclosed_error() {
+        let result = HtmlParser.parse("<strong>not closed");
         assert!(matches!(result, Err(ParseError::UnclosedTag { ref tag, .. }) if tag == "strong"));
     }
 
     #[test]
-    fn erreur_contient_position_precise() {
-        let input = "texte <div>contenu</div>";
+    fn error_contains_accurate_position() {
+        let input = "text <div>content</div>";
         if let Err(ParseError::UnsupportedSymbol { position, .. }) = HtmlParser.parse(input) {
             assert_eq!(position.line, 1);
             assert!(position.byte_offset > 0);
         } else {
-            panic!("Attendu UnsupportedSymbol");
+            panic!("Expected UnsupportedSymbol");
         }
     }
 
-    // ── Cas limites ──────────────────────────────────────────────────────────
+    // ── Edge cases ───────────────────────────────────────────────────────────
 
     #[test]
-    fn input_vide_retourne_vec_vide() {
+    fn empty_input_returns_empty_vec() {
         let result = HtmlParser.parse("").unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
-    fn texte_unicode_preserve() {
+    fn unicode_text_is_preserved() {
         let result = HtmlParser.parse("<strong>données</strong>").unwrap();
         assert_eq!(flatten_text(&result), "données");
     }
 
     #[test]
-    fn supported_symbols_retourne_12_entrees() {
+    fn supported_symbols_returns_12_entries() {
         let symbols = HtmlParser.supported_symbols();
         assert_eq!(symbols.len(), 12);
         assert!(!symbols.iter().any(|symbol| symbol.symbol == "<blockquote>"));
     }
 
-    // ── Tests avancés 03b ────────────────────────────────────────────────────
+    // ── Advanced tests ───────────────────────────────────────────────────────
 
     #[test]
-    fn emoji_dans_texte_brut_preserve() {
-        let result = HtmlParser.parse("🚀 Lancement").unwrap();
+    fn emoji_in_plain_text_is_preserved() {
+        let result = HtmlParser.parse("🚀 Launch").unwrap();
         assert!(flatten_text(&result).contains("🚀"));
     }
 
     #[test]
-    fn emoji_dans_strong_preserve() {
+    fn emoji_in_strong_is_preserved() {
         let result = HtmlParser
             .parse("<strong>🔥 Top performer</strong>")
             .unwrap();
@@ -650,22 +727,22 @@ mod tests {
     }
 
     #[test]
-    fn emoji_dans_em_preserve() {
-        let result = HtmlParser.parse("<em>✨ Incroyable</em>").unwrap();
+    fn emoji_in_em_is_preserved() {
+        let result = HtmlParser.parse("<em>✨ Amazing</em>").unwrap();
         assert!(find_node(&result, ContainerType::Italic).is_some());
         assert!(flatten_text(&result).contains("✨"));
     }
 
     #[test]
-    fn emoji_entre_balises_preserve() {
+    fn emoji_between_tags_is_preserved() {
         let result = HtmlParser
-            .parse("<strong>Avant</strong> 👉 <em>Après</em>")
+            .parse("<strong>Before</strong> 👉 <em>After</em>")
             .unwrap();
         assert!(flatten_text(&result).contains("👉"));
     }
 
     #[test]
-    fn emoji_multicodepoint_dans_li_preserve() {
+    fn multi_codepoint_emoji_in_li_is_preserved() {
         let result = HtmlParser
             .parse("<ul><li>👨‍💻 Dev</li><li>👩‍🎨 Designer</li></ul>")
             .unwrap();
@@ -675,24 +752,24 @@ mod tests {
     }
 
     #[test]
-    fn strong_avec_attribut_class_ignore() {
+    fn strong_with_class_attribute_is_parsed() {
         let result = HtmlParser
-            .parse(r#"<strong class="highlight">texte</strong>"#)
+            .parse(r#"<strong class="highlight">text</strong>"#)
             .unwrap();
         assert!(find_node(&result, ContainerType::Bold).is_some());
-        assert_eq!(flatten_text(&result), "texte");
+        assert_eq!(flatten_text(&result), "text");
     }
 
     #[test]
-    fn em_avec_attribut_style_ignore() {
+    fn em_with_style_attribute_is_parsed() {
         let result = HtmlParser
-            .parse(r#"<em style="color:red">italique</em>"#)
+            .parse(r#"<em style="color:red">italic</em>"#)
             .unwrap();
         assert!(find_node(&result, ContainerType::Italic).is_some());
     }
 
     #[test]
-    fn ul_avec_attribut_ignore() {
+    fn ul_with_attribute_is_parsed() {
         let result = HtmlParser
             .parse(r#"<ul class="list-disc"><li>item</li></ul>"#)
             .unwrap();
@@ -700,13 +777,13 @@ mod tests {
     }
 
     #[test]
-    fn br_avec_attribut_slash_self_closing() {
-        let result = HtmlParser.parse("avant<br />après").unwrap();
+    fn br_self_closing_with_slash_inserts_newline() {
+        let result = HtmlParser.parse("before<br />after").unwrap();
         assert!(flatten_text(&result).contains('\n'));
     }
 
     #[test]
-    fn tag_inconnu_avec_attribut_retourne_erreur_avec_le_bon_tag() {
+    fn unknown_tag_with_attribute_reports_correct_tag_name() {
         let result = HtmlParser.parse(r#"<div class="foo">x</div>"#);
         assert!(
             matches!(result, Err(ParseError::UnsupportedSymbol { ref symbol, .. }) if symbol == "<div>")
@@ -714,16 +791,16 @@ mod tests {
     }
 
     #[test]
-    fn strong_dans_em() {
-        let result = HtmlParser.parse("<em><strong>texte</strong></em>").unwrap();
+    fn strong_nested_in_em() {
+        let result = HtmlParser.parse("<em><strong>text</strong></em>").unwrap();
         assert!(find_node(&result, ContainerType::Italic).is_some());
         assert!(find_node(&result, ContainerType::Bold).is_some());
     }
 
     #[test]
-    fn em_dans_strong_dans_p() {
+    fn em_nested_in_strong_nested_in_p() {
         let result = HtmlParser
-            .parse("<p><strong>Bonjour <em>monde</em></strong></p>")
+            .parse("<p><strong>Hello <em>world</em></strong></p>")
             .unwrap();
         let bold = find_node(&result, ContainerType::Bold).unwrap();
         let has_italic = bold.children.iter().any(
@@ -733,11 +810,11 @@ mod tests {
     }
 
     #[test]
-    fn liste_avec_items_styles() {
+    fn list_with_styled_items() {
         let input = "<ul>\
-            <li><strong>Premier</strong> point</li>\
-            <li>Deuxième point <em>important</em></li>\
-            <li><s>obsolète</s></li>\
+            <li><strong>First</strong> point</li>\
+            <li>Second point <em>important</em></li>\
+            <li><s>obsolete</s></li>\
         </ul>";
         let result = HtmlParser.parse(input).unwrap();
         assert_eq!(result[0].container_type, ContainerType::List);
@@ -750,24 +827,24 @@ mod tests {
     }
 
     #[test]
-    fn blockquote_avec_strong_dedans_produit_erreur() {
+    fn blockquote_containing_strong_produces_error() {
         let result =
-            HtmlParser.parse("<blockquote><strong>Important</strong> à retenir</blockquote>");
+            HtmlParser.parse("<blockquote><strong>Important</strong> to remember</blockquote>");
         assert!(
             matches!(result, Err(ParseError::UnsupportedSymbol { ref symbol, .. }) if symbol == "<blockquote>")
         );
     }
 
     #[test]
-    fn ol_li_avec_style_inline() {
+    fn ol_li_with_inline_styles() {
         let result = HtmlParser
-            .parse("<ol><li><strong>Étape 1</strong></li><li><em>Étape 2</em></li></ol>")
+            .parse("<ol><li><strong>Step 1</strong></li><li><em>Step 2</em></li></ol>")
             .unwrap();
         assert_eq!(result[0].container_type, ContainerType::OrderedList);
     }
 
     #[test]
-    fn triple_imbrication_mark_em_strong() {
+    fn triple_nesting_mark_em_strong() {
         let result = HtmlParser
             .parse("<mark><em><strong>triple</strong></em></mark>")
             .unwrap();
@@ -775,65 +852,67 @@ mod tests {
     }
 
     #[test]
-    fn multiple_br_insere_multiple_newlines() {
+    fn multiple_br_inserts_multiple_newlines() {
         let result = HtmlParser.parse("a<br>b<br>c").unwrap();
         assert_eq!(flatten_text(&result), "a\nb\nc");
     }
 
     #[test]
-    fn p_suivi_de_p_insere_deux_newlines() {
-        let result = HtmlParser.parse("<p>premier</p><p>deuxième</p>").unwrap();
+    fn consecutive_p_tags_produce_text_with_content() {
+        let result = HtmlParser.parse("<p>first</p><p>second</p>").unwrap();
         let text = flatten_text(&result);
-        assert!(text.contains("premier"));
-        assert!(text.contains("deuxième"));
+        assert!(text.contains("first"));
+        assert!(text.contains("second"));
     }
 
     #[test]
-    fn p_vide_insere_newline() {
+    fn empty_p_tag_is_handled() {
         let result = HtmlParser.parse("<p></p>").unwrap();
         assert!(flatten_text(&result).is_empty() || result.is_empty());
     }
 
     #[test]
-    fn br_dans_liste_item_insere_newline() {
+    fn br_inside_list_item_inserts_newline() {
         let result = HtmlParser
-            .parse("<ul><li>ligne1<br>ligne2</li></ul>")
+            .parse("<ul><li>line1<br>line2</li></ul>")
             .unwrap();
-        assert!(flatten_text(&result).contains("ligne1\nligne2"));
+        assert!(flatten_text(&result).contains("line1\nline2"));
     }
 
     #[test]
-    fn br_dans_strong_insere_newline_dans_le_bold() {
-        let result = HtmlParser.parse("<strong>avant<br>après</strong>").unwrap();
+    fn br_inside_strong_inserts_newline_in_bold() {
+        let result = HtmlParser
+            .parse("<strong>before<br>after</strong>")
+            .unwrap();
         assert!(flatten_text(&result).contains('\n'));
     }
 
     #[test]
-    fn entite_amp_preserve_dans_texte() {
+    fn amp_entity_is_preserved_in_text() {
         let result = HtmlParser.parse("A &amp; B").unwrap();
         let text = flatten_text(&result);
         assert!(text.contains("&amp;") || text.contains('&'));
     }
 
     #[test]
-    fn entite_nbsp_preserve_dans_texte() {
-        let result = HtmlParser.parse("mot&nbsp;mot");
+    fn nbsp_entity_does_not_panic() {
+        let result = HtmlParser.parse("word&nbsp;word");
         let _ = result;
     }
 
     #[test]
-    fn html_notion_like_paragraphe_avec_strong() {
-        let input = r#"<p>Aujourd'hui, j'ai <strong>lancé</strong> mon nouveau projet.</p>"#;
+    fn notion_like_paragraph_with_strong() {
+        let input = r#"<p>Today I <strong>launched</strong> my new project.</p>"#;
         let result = HtmlParser.parse(input).unwrap();
-        assert!(flatten_text(&result).contains("lancé"));
+        assert!(flatten_text(&result).contains("launched"));
         assert!(find_node(&result, ContainerType::Bold).is_some());
     }
 
     #[test]
-    fn html_linkedin_post_simple() {
-        let input = "<p><strong>🎉 Nouvelle étape professionnelle !</strong></p>\
-                     <p>Je suis ravi d'annoncer que je rejoins <em>Acme Corp</em>.</p>\
-                     <p>Merci à tous. 🙏</p>";
+    fn linkedin_post_simple() {
+        let input = "<p><strong>🎉 New milestone!</strong></p>\
+                     <p>I am thrilled to announce I am joining <em>Acme Corp</em>.</p>\
+                     <p>Thanks to everyone. 🙏</p>";
         let result = HtmlParser.parse(input).unwrap();
         assert!(find_node(&result, ContainerType::Bold).is_some());
         assert!(find_node(&result, ContainerType::Italic).is_some());
@@ -843,15 +922,15 @@ mod tests {
     }
 
     #[test]
-    fn html_post_avec_liste_et_citation_produit_erreur() {
+    fn post_with_list_and_blockquote_produces_error() {
         let input = "\
-            <p><strong>Ce que j'ai appris :</strong></p>\
+            <p><strong>What I learned:</strong></p>\
             <ul>\
-                <li><strong>Rust</strong> pour la perf 🚀</li>\
-                <li>La <em>documentation</em> sauve des vies</li>\
-                <li><s>Les deadlines</s> Le temps</li>\
+                <li><strong>Rust</strong> for performance 🚀</li>\
+                <li>Good <em>documentation</em> saves lives</li>\
+                <li><s>Deadlines</s> Time</li>\
             </ul>\
-            <blockquote>Le meilleur code.</blockquote>";
+            <blockquote>The best code.</blockquote>";
         let result = HtmlParser.parse(input);
         assert!(
             matches!(result, Err(ParseError::UnsupportedSymbol { ref symbol, .. }) if symbol == "<blockquote>")
@@ -859,17 +938,17 @@ mod tests {
     }
 
     #[test]
-    fn html_post_long_tous_les_styles_sans_citation() {
+    fn long_post_all_styles_without_blockquote() {
         let input = "\
-            <p>🚀 <strong>3 ans de freelance</strong></p>\
-            <p>J'avais <em>complètement</em> tort.</p>\
+            <p>🚀 <strong>3 years of freelancing</strong></p>\
+            <p>I was <em>completely</em> wrong.</p>\
             <ul>\
-                <li><strong>Trouver des clients</strong></li>\
-                <li>La facturation, <s>personne</s> vraiment personne</li>\
-                <li><mark>Votre réputation</mark> vaut plus</li>\
-                <li><em>La solitude</em> du freelance 🧘</li>\
+                <li><strong>Finding clients</strong></li>\
+                <li>Invoicing, <s>nobody</s> really nobody</li>\
+                <li><mark>Your reputation</mark> is worth more</li>\
+                <li><em>The solitude</em> of freelancing 🧘</li>\
             </ul>\
-            <p><strong>Et vous ?</strong> 👇</p>";
+            <p><strong>What about you?</strong> 👇</p>";
         let result = HtmlParser.parse(input).unwrap();
         assert!(!result.is_empty());
         let text = flatten_text(&result);
@@ -884,20 +963,20 @@ mod tests {
     }
 
     #[test]
-    fn html_avec_accents_dans_tous_les_styles() {
+    fn accented_characters_preserved_across_all_styles() {
         let input =
-            "<strong>Développeur</strong> passionné par <em>l'élégance</em> du <u>code propre</u>.";
+            "<strong>Developer</strong> passionate about <em>elegance</em> in <u>clean code</u>.";
         let result = HtmlParser.parse(input).unwrap();
         let text = flatten_text(&result);
-        assert!(text.contains("Développeur"));
-        assert!(text.contains("l'élégance"));
-        assert!(text.contains("code propre"));
+        assert!(text.contains("Developer"));
+        assert!(text.contains("elegance"));
+        assert!(text.contains("clean code"));
     }
 
     #[test]
-    fn html_chiffres_et_pourcentages_dans_styles() {
+    fn numbers_and_percentages_in_styles() {
         let input =
-            "<p>En <strong>2024</strong>, j'ai livré <em>47 projets</em> avec <mark>98%</mark>.</p>";
+            "<p>In <strong>2024</strong>, I delivered <em>47 projects</em> with <mark>98%</mark>.</p>";
         let result = HtmlParser.parse(input).unwrap();
         assert!(find_node(&result, ContainerType::Bold).is_some());
         assert!(find_node(&result, ContainerType::Italic).is_some());
@@ -905,52 +984,52 @@ mod tests {
     }
 
     #[test]
-    fn tag_vide_strong_sans_contenu() {
+    fn empty_strong_tag_produces_empty_bold_node() {
         let result = HtmlParser.parse("<strong></strong>").unwrap();
         let bold = find_node(&result, ContainerType::Bold).unwrap();
         assert!(bold.children.is_empty());
     }
 
     #[test]
-    fn texte_brut_avant_et_apres_balise() {
+    fn plain_text_before_and_after_tag() {
         let result = HtmlParser
-            .parse("Avant <strong>gras</strong> après")
+            .parse("Before <strong>bold</strong> after")
             .unwrap();
         let text = flatten_text(&result);
-        assert!(text.contains("Avant"));
-        assert!(text.contains("après"));
+        assert!(text.contains("Before"));
+        assert!(text.contains("after"));
     }
 
     #[test]
-    fn commentaire_multi_ligne_ignore() {
-        let input = "avant<!--\ncommentaire\nsur plusieurs lignes\n-->après";
+    fn multiline_comment_is_ignored() {
+        let input = "before<!--\ncomment\nover multiple lines\n-->after";
         let result = HtmlParser.parse(input).unwrap();
         let text = flatten_text(&result);
-        assert!(!text.contains("commentaire"));
-        assert!(text.contains("avant"));
-        assert!(text.contains("après"));
+        assert!(!text.contains("comment"));
+        assert!(text.contains("before"));
+        assert!(text.contains("after"));
     }
 
     #[test]
-    fn html_unicode_chinois_preserve() {
+    fn chinese_unicode_is_preserved() {
         let result = HtmlParser.parse("<strong>你好世界</strong>").unwrap();
         assert_eq!(flatten_text(&result), "你好世界");
     }
 
     #[test]
-    fn html_arabe_preserve() {
+    fn arabic_unicode_is_preserved() {
         let result = HtmlParser.parse("<em>مرحبا</em>").unwrap();
         assert!(flatten_text(&result).contains("مرحبا"));
     }
 
     #[test]
-    fn balise_fermante_sans_ouvrante_ne_panique_pas() {
-        let result = HtmlParser.parse("texte </strong> suite");
+    fn closing_tag_without_opening_does_not_panic() {
+        let result = HtmlParser.parse("text </strong> after");
         let _ = result;
     }
 
     #[test]
-    fn tres_longue_liste_html() {
+    fn very_long_list_is_parsed() {
         let items: String = (1..=50).map(|i| format!("<li>Item {}</li>", i)).collect();
         let input = format!("<ul>{}</ul>", items);
         let result = HtmlParser.parse(&input).unwrap();
@@ -963,17 +1042,35 @@ mod tests {
     }
 
     #[test]
-    fn balise_avec_attribut_data_ignore() {
+    fn tag_with_data_attribute_is_parsed() {
         let result = HtmlParser
-            .parse(r#"<strong data-id="123">texte</strong>"#)
+            .parse(r#"<strong data-id="123">text</strong>"#)
             .unwrap();
         assert!(find_node(&result, ContainerType::Bold).is_some());
     }
 
     #[test]
-    fn erreur_stoppe_a_la_premiere_balise_invalide() {
-        let input = "<strong>valide</strong><div>invalide</div><em>aussi valide</em>";
+    fn error_stops_at_first_invalid_tag() {
+        let input = "<strong>valid</strong><div>invalid</div><em>also valid</em>";
         let result = HtmlParser.parse(input);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn nesting_too_deep_returns_error() {
+        let open: String = "<strong>".repeat(65);
+        let close: String = "</strong>".repeat(65);
+        let input = format!("{}x{}", open, close);
+        let result = HtmlParser.parse(&input);
+        assert!(matches!(result, Err(ParseError::NestingTooDeep { .. })));
+    }
+
+    #[test]
+    fn nesting_at_limit_is_accepted() {
+        let open: String = "<strong>".repeat(64);
+        let close: String = "</strong>".repeat(64);
+        let input = format!("{}x{}", open, close);
+        let result = HtmlParser.parse(&input);
+        assert!(result.is_ok());
     }
 }

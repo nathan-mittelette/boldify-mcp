@@ -1,5 +1,7 @@
+use api_shared::{body_bytes, error_response, ok_json};
 use lambda_http::{run, service_fn, Body, Error, Request, Response};
-use service::ContentService;
+use service::{ContentService, ServiceError};
+use tracing::{info, warn};
 
 #[derive(serde::Deserialize)]
 struct ConvertRequest {
@@ -7,64 +9,66 @@ struct ConvertRequest {
     content: String,
 }
 
-trait ConvertService: Send + Sync {
-    fn convert(&self, syntax: &str, content: &str) -> Result<String, service::ServiceError>;
-}
-
-impl ConvertService for ContentService {
-    fn convert(&self, syntax: &str, content: &str) -> Result<String, service::ServiceError> {
-        ContentService::convert(self, syntax, content)
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt()
+        .json()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+        .init();
     let svc = ContentService::new();
     run(service_fn(|req| handler(req, &svc))).await
 }
 
 async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, Error> {
-    handler_generic(req, svc).await
-}
+    info!(method = %req.method(), path = %req.uri().path(), "request received");
+    let bytes = body_bytes(req.body());
 
-async fn handler_generic(req: Request, svc: &dyn ConvertService) -> Result<Response<Body>, Error> {
-    let body_bytes = match req.body() {
-        Body::Text(s) => s.as_bytes().to_vec(),
-        Body::Binary(b) => b.clone(),
-        Body::Empty => vec![],
-        _ => vec![],
-    };
-
-    let dto: ConvertRequest = match serde_json::from_slice(&body_bytes) {
+    let dto: ConvertRequest = match serde_json::from_slice(&bytes) {
         Ok(d) => d,
-        Err(e) => return bad_request(&format!("JSON invalide : {}", e)),
+        Err(e) => {
+            warn!(error = %e, "invalid JSON body");
+            return error_response("INVALID_JSON", &format!("Invalid JSON: {}", e));
+        }
     };
 
     match svc.convert(&dto.syntax, &dto.content) {
-        Ok(result) => {
-            let json = serde_json::json!({ "result": result }).to_string();
-            Ok(Response::builder()
-                .status(200)
-                .header("Content-Type", "application/json")
-                .body(Body::Text(json))?)
+        Ok(result) => ok_json(serde_json::json!({ "result": result }).to_string()),
+        Err(e) => {
+            warn!(error = %e, syntax = %dto.syntax, "convert failed");
+            error_response(service_error_code(&e), &e.to_string())
         }
-        Err(e) => bad_request(&e.to_string()),
     }
 }
 
-fn bad_request(msg: &str) -> Result<Response<Body>, lambda_http::Error> {
-    let body = serde_json::json!({ "error": msg }).to_string();
-    Ok(Response::builder()
-        .status(400)
-        .header("Content-Type", "application/json")
-        .body(Body::Text(body))?)
+fn service_error_code(e: &ServiceError) -> &'static str {
+    use parser::ParseError;
+    match e {
+        ServiceError::UnsupportedSyntax(_) => "UNSUPPORTED_SYNTAX",
+        ServiceError::InputTooLarge { .. } => "INPUT_TOO_LARGE",
+        ServiceError::Parse(ParseError::UnsupportedSymbol { .. }) => "UNSUPPORTED_SYMBOL",
+        ServiceError::Parse(ParseError::NestingTooDeep { .. }) => "NESTING_TOO_DEEP",
+        ServiceError::Parse(ParseError::UnclosedTag { .. }) => "UNCLOSED_TAG",
+        ServiceError::Parse(ParseError::InvalidHtml(_)) => "INVALID_HTML",
+        ServiceError::Parse(ParseError::InputTooLarge { .. }) => "INPUT_TOO_LARGE",
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use api_shared::body_to_string;
     use lambda_http::http::Request as HttpRequest;
-    use service::ServiceError;
+    use service::{ContentService, ServiceError};
+
+    trait ConvertService: Send + Sync {
+        fn convert(&self, syntax: &str, content: &str) -> Result<String, ServiceError>;
+    }
+
+    impl ConvertService for ContentService {
+        fn convert(&self, syntax: &str, content: &str) -> Result<String, ServiceError> {
+            ContentService::convert(self, syntax, content)
+        }
+    }
 
     struct MockSvc {
         result: Result<String, ServiceError>,
@@ -73,6 +77,23 @@ mod tests {
     impl ConvertService for MockSvc {
         fn convert(&self, _: &str, _: &str) -> Result<String, ServiceError> {
             self.result.clone()
+        }
+    }
+
+    async fn handler_with<S: ConvertService>(
+        req: Request,
+        svc: &S,
+    ) -> Result<Response<Body>, Error> {
+        let bytes = body_bytes(req.body());
+
+        let dto: ConvertRequest = match serde_json::from_slice(&bytes) {
+            Ok(d) => d,
+            Err(e) => return error_response("INVALID_JSON", &format!("Invalid JSON: {}", e)),
+        };
+
+        match svc.convert(&dto.syntax, &dto.content) {
+            Ok(result) => ok_json(serde_json::json!({ "result": result }).to_string()),
+            Err(e) => error_response(service_error_code(&e), &e.to_string()),
         }
     }
 
@@ -85,52 +106,43 @@ mod tests {
             .unwrap()
     }
 
-    async fn body_to_string(resp: Response<Body>) -> String {
-        match resp.into_body() {
-            Body::Text(s) => s,
-            Body::Binary(b) => String::from_utf8_lossy(&b).into_owned(),
-            Body::Empty => String::new(),
-            _ => String::new(),
-        }
-    }
-
     #[tokio::test]
-    async fn post_convert_valide_retourne_200_avec_result() {
+    async fn post_convert_valid_returns_200_with_result() {
         let svc = MockSvc {
-            result: Ok("𝗕𝗼𝗻𝗷𝗼𝘂𝗿".to_string()),
+            result: Ok("𝗕𝗼𝗹𝗱".to_string()),
         };
-        let req = build_post_request(r#"{"syntax":"markdown","content":"**Bonjour**"}"#);
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let req = build_post_request(r#"{"syntax":"markdown","content":"**Bold**"}"#);
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 200);
-        let body = body_to_string(resp).await;
+        let body = body_to_string(resp.into_body());
         assert!(body.contains("result"));
-        assert!(body.contains("𝗕𝗼𝗻𝗷𝗼𝘂𝗿"));
+        assert!(body.contains("𝗕𝗼𝗹𝗱"));
     }
 
     #[tokio::test]
-    async fn post_convert_json_invalide_retourne_400() {
+    async fn post_convert_invalid_json_returns_400() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
-        let req = build_post_request("pas du json");
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let req = build_post_request("not json");
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 400);
-        let body = body_to_string(resp).await;
-        assert!(body.contains("JSON invalide"));
+        let body = body_to_string(resp.into_body());
+        assert!(body.contains("Invalid JSON"));
     }
 
     #[tokio::test]
-    async fn post_convert_syntaxe_inconnue_retourne_400() {
+    async fn post_convert_unknown_syntax_returns_400() {
         let svc = MockSvc {
             result: Err(ServiceError::UnsupportedSyntax("xml".to_string())),
         };
         let req = build_post_request(r#"{"syntax":"xml","content":"x"}"#);
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 400);
     }
 
     #[tokio::test]
-    async fn post_convert_erreur_parser_retourne_400() {
+    async fn post_convert_parser_error_returns_400() {
         use parser::{ParseError, SourcePosition};
         let svc = MockSvc {
             result: Err(ServiceError::Parse(ParseError::UnsupportedSymbol {
@@ -143,63 +155,73 @@ mod tests {
             })),
         };
         let req = build_post_request(r#"{"syntax":"html","content":"<div>x</div>"}"#);
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 400);
-        let body = body_to_string(resp).await;
+        let body = body_to_string(resp.into_body());
         assert!(body.contains("<div>"));
     }
 
     #[tokio::test]
-    async fn post_convert_content_vide_retourne_200_avec_chaine_vide() {
+    async fn post_convert_empty_content_returns_200_with_empty_string() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
         let req = build_post_request(r#"{"syntax":"markdown","content":""}"#);
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 200);
-        let body = body_to_string(resp).await;
+        let body = body_to_string(resp.into_body());
         assert!(body.contains(r#""result":""#));
     }
 
     #[tokio::test]
-    async fn reponse_contient_content_type_json() {
+    async fn response_200_contains_content_type_json() {
         let svc = MockSvc {
             result: Ok("x".to_string()),
         };
         let req = build_post_request(r#"{"syntax":"markdown","content":"x"}"#);
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.headers()["content-type"], "application/json");
     }
 
     #[tokio::test]
-    async fn champ_syntax_manquant_retourne_400() {
+    async fn missing_syntax_field_returns_400() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
         let req = build_post_request(r#"{"content":"x"}"#);
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 400);
     }
 
     #[tokio::test]
-    async fn body_json_invalide_contient_message_erreur() {
+    async fn missing_content_field_returns_400() {
+        let svc = MockSvc {
+            result: Ok(String::new()),
+        };
+        let req = build_post_request(r#"{"syntax":"markdown"}"#);
+        let resp = handler_with(req, &svc).await.unwrap();
+        assert_eq!(resp.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn invalid_json_body_contains_error_message() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
         let req = build_post_request("{invalid}");
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.status(), 400);
-        let body = body_to_string(resp).await;
+        let body = body_to_string(resp.into_body());
         assert!(body.contains("error"));
     }
 
     #[tokio::test]
-    async fn reponse_400_contient_content_type_json() {
+    async fn response_400_contains_content_type_json() {
         let svc = MockSvc {
             result: Ok(String::new()),
         };
-        let req = build_post_request("pas du json");
-        let resp = handler_generic(req, &svc).await.unwrap();
+        let req = build_post_request("not json");
+        let resp = handler_with(req, &svc).await.unwrap();
         assert_eq!(resp.headers()["content-type"], "application/json");
     }
 }

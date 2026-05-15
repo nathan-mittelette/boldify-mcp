@@ -1,11 +1,11 @@
-use once_cell::sync::OnceCell;
-use unicode_segmentation::UnicodeSegmentation;
+use std::sync::OnceLock;
 
 use super::handler::FontHandler;
+use super::shared::apply_combining_mark;
 
 pub struct UnderlineHandler;
 
-static INSTANCE: OnceCell<UnderlineHandler> = OnceCell::new();
+static INSTANCE: OnceLock<UnderlineHandler> = OnceLock::new();
 
 pub fn underline_handler() -> &'static UnderlineHandler {
     INSTANCE.get_or_init(|| UnderlineHandler)
@@ -13,15 +13,7 @@ pub fn underline_handler() -> &'static UnderlineHandler {
 
 impl FontHandler for UnderlineHandler {
     fn apply(&self, text: &str) -> String {
-        text.graphemes(true)
-            .map(|g| {
-                if g == " " || g == "\n" {
-                    g.to_string()
-                } else {
-                    format!("{}\u{0332}", g)
-                }
-            })
-            .collect()
+        apply_combining_mark(text, "\u{0332}")
     }
 }
 
@@ -30,7 +22,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn underline_ajoute_combining_a_chaque_char() {
+    fn underline_adds_combining_to_each_char() {
         let result = UnderlineHandler.apply("AB");
         let chars: Vec<char> = result.chars().collect();
         assert_eq!(chars[1], '\u{0332}');
@@ -38,19 +30,17 @@ mod tests {
     }
 
     #[test]
-    fn underline_preserve_espace() {
+    fn underline_preserves_space() {
         assert_eq!(UnderlineHandler.apply(" "), " ");
     }
 
     #[test]
-    fn underline_preserve_newline() {
+    fn underline_preserves_newline() {
         assert_eq!(UnderlineHandler.apply("\n"), "\n");
     }
 
-    // ── Tâche 05b ────────────────────────────────────────────────────────────
-
     #[test]
-    fn underline_chaque_char_a_son_combining() {
+    fn underline_each_char_has_combining() {
         let result = UnderlineHandler.apply("ABC");
         let chars: Vec<char> = result.chars().collect();
         assert_eq!(chars.len(), 6);
@@ -60,13 +50,13 @@ mod tests {
     }
 
     #[test]
-    fn underline_emoji_preserve_sans_combining() {
+    fn underline_emoji_preserved_without_combining() {
         let result = UnderlineHandler.apply("🚀");
         assert!(result.contains('🚀') || result.chars().next().unwrap() as u32 > 0xFFFF);
     }
 
     #[test]
-    fn underline_espace_preserve_sans_combining() {
+    fn underline_space_preserved_without_combining() {
         let result = UnderlineHandler.apply("A B");
         let chars: Vec<char> = result.chars().collect();
         let space_index = chars.iter().position(|&c| c == ' ').unwrap();

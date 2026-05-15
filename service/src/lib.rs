@@ -3,6 +3,7 @@ pub use error::ServiceError;
 
 use converter::convert;
 use parser::{HtmlParser, MarkdownParser, Parser, SupportedSymbol};
+use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct ContentService {
@@ -29,6 +30,23 @@ impl ContentService {
 
     /// Parses `content` with the `syntax` parser, then converts to Unicode.
     pub fn convert(&self, syntax: &str, content: &str) -> Result<String, ServiceError> {
+        const MAX_SIZE: usize = 10 * 1024 * 1024;
+
+        info!(syntax, content_len = content.len(), "convert called");
+
+        if content.len() > MAX_SIZE {
+            warn!(
+                syntax,
+                content_len = content.len(),
+                max = MAX_SIZE,
+                "input too large"
+            );
+            return Err(ServiceError::InputTooLarge {
+                found: content.len(),
+                max: MAX_SIZE,
+            });
+        }
+
         if content.trim().is_empty() {
             return Ok(String::new());
         }
@@ -39,7 +57,9 @@ impl ContentService {
             other => return Err(ServiceError::UnsupportedSyntax(other.to_string())),
         };
 
-        Ok(convert(&nodes))
+        let result = convert(&nodes);
+        info!(syntax, output_len = result.len(), "convert succeeded");
+        Ok(result)
     }
 }
 
@@ -98,55 +118,55 @@ mod tests {
         fn supported_symbols(&self) -> Vec<SupportedSymbol> {
             vec![SupportedSymbol {
                 symbol: "**".to_string(),
-                description: "Gras".to_string(),
-                example: "**gras**".to_string(),
+                description: "Bold".to_string(),
+                example: "**bold**".to_string(),
             }]
         }
     }
 
-    // ── Routage syntaxe ──────────────────────────────────────────────────────
+    // ── Syntax routing ───────────────────────────────────────────────────────
 
     #[test]
-    fn syntaxe_markdown_route_vers_markdown_parser() {
+    fn markdown_syntax_routes_to_markdown_parser() {
         let svc = ContentService::new();
-        assert!(svc.convert("markdown", "texte simple").is_ok());
+        assert!(svc.convert("markdown", "simple text").is_ok());
     }
 
     #[test]
-    fn alias_md_accepte() {
+    fn md_alias_is_accepted() {
         let svc = ContentService::new();
-        assert!(svc.convert("md", "texte simple").is_ok());
+        assert!(svc.convert("md", "simple text").is_ok());
     }
 
     #[test]
-    fn syntaxe_html_route_vers_html_parser() {
+    fn html_syntax_routes_to_html_parser() {
         let svc = ContentService::new();
         assert!(svc.convert("html", "<strong>test</strong>").is_ok());
     }
 
     #[test]
-    fn syntaxe_inconnue_retourne_unsupported_syntax() {
+    fn unknown_syntax_returns_unsupported_syntax_error() {
         let svc = ContentService::new();
-        let result = svc.convert("xml", "contenu");
+        let result = svc.convert("xml", "content");
         assert!(matches!(result, Err(ServiceError::UnsupportedSyntax(s)) if s == "xml"));
     }
 
     #[test]
-    fn syntaxe_majuscule_acceptee() {
+    fn uppercase_syntax_is_accepted() {
         let svc = ContentService::new();
-        assert!(svc.convert("Markdown", "texte simple").is_ok());
+        assert!(svc.convert("Markdown", "simple text").is_ok());
     }
 
-    // ── Contenu vide ─────────────────────────────────────────────────────────
+    // ── Empty content ────────────────────────────────────────────────────────
 
     #[test]
-    fn contenu_vide_retourne_chaine_vide_sans_appel_parser() {
+    fn empty_content_returns_empty_string_without_calling_parser() {
         let svc = ContentService::new();
         assert_eq!(svc.convert("markdown", "").unwrap(), "");
     }
 
     #[test]
-    fn contenu_espaces_seuls_retourne_chaine_vide() {
+    fn whitespace_only_content_returns_empty_string() {
         let svc = ContentService::new();
         assert_eq!(svc.convert("markdown", "   \n  \t  ").unwrap(), "");
     }
@@ -154,19 +174,19 @@ mod tests {
     // ── list_syntaxes ────────────────────────────────────────────────────────
 
     #[test]
-    fn list_syntaxes_markdown_retourne_symboles_non_vide() {
+    fn list_syntaxes_markdown_returns_non_empty_symbols() {
         let svc = ContentService::new();
         assert!(!svc.list_syntaxes("markdown").unwrap().is_empty());
     }
 
     #[test]
-    fn list_syntaxes_html_retourne_symboles_non_vide() {
+    fn list_syntaxes_html_returns_non_empty_symbols() {
         let svc = ContentService::new();
         assert!(!svc.list_syntaxes("html").unwrap().is_empty());
     }
 
     #[test]
-    fn list_syntaxes_syntaxe_inconnue_retourne_erreur() {
+    fn list_syntaxes_unknown_syntax_returns_error() {
         let svc = ContentService::new();
         assert!(matches!(
             svc.list_syntaxes("toml"),
@@ -175,25 +195,25 @@ mod tests {
     }
 
     #[test]
-    fn list_syntaxes_markdown_contient_double_etoile() {
+    fn list_syntaxes_markdown_contains_double_star() {
         let svc = ContentService::new();
         let symbols = svc.list_syntaxes("markdown").unwrap();
         assert!(symbols.iter().any(|s| s.symbol == "**"));
     }
 
-    // ── Propagation des erreurs ───────────────────────────────────────────────
+    // ── Error propagation ────────────────────────────────────────────────────
 
     #[test]
-    fn erreur_parser_propagee_comme_service_error_parse() {
+    fn parser_error_propagated_as_service_error_parse() {
         let svc = ContentService::new();
-        let result = svc.convert("markdown", "# titre");
+        let result = svc.convert("markdown", "# title");
         assert!(matches!(result, Err(ServiceError::Parse(_))));
     }
 
-    // ── Tests via MockParser ─────────────────────────────────────────────────
+    // ── MockParser tests ─────────────────────────────────────────────────────
 
     #[test]
-    fn mock_ok_retourne_texte_converti() {
+    fn mock_ok_returns_converted_text() {
         let parser = MockParser::ok("hello");
         let nodes = parser.parse("ignored").unwrap();
         let result = convert(&nodes);
@@ -201,9 +221,41 @@ mod tests {
     }
 
     #[test]
-    fn mock_err_produit_une_erreur_parse() {
+    fn mock_err_produces_parse_error() {
         let parser = MockParser::err("<div>");
         let err = parser.parse("ignored").unwrap_err();
         assert!(matches!(err, ParseError::UnsupportedSymbol { .. }));
+    }
+
+    #[test]
+    fn content_too_large_returns_input_too_large_error() {
+        let svc = ContentService::new();
+        let huge = "a".repeat(10 * 1024 * 1024 + 1);
+        let result = svc.convert("markdown", &huge);
+        assert!(matches!(result, Err(ServiceError::InputTooLarge { .. })));
+    }
+
+    #[test]
+    fn content_at_limit_is_accepted() {
+        let svc = ContentService::new();
+        let at_limit = "a".repeat(10 * 1024 * 1024);
+        let result = svc.convert("markdown", &at_limit);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn concurrent_conversions_are_consistent() {
+        use std::sync::Arc;
+        let svc = Arc::new(ContentService::new());
+        let handles: Vec<_> = (0..20)
+            .map(|_| {
+                let svc = Arc::clone(&svc);
+                std::thread::spawn(move || svc.convert("markdown", "**bold**").unwrap())
+            })
+            .collect();
+        let expected = svc.convert("markdown", "**bold**").unwrap();
+        for handle in handles {
+            assert_eq!(handle.join().unwrap(), expected);
+        }
     }
 }
