@@ -3,14 +3,6 @@ name    = "api-convert"
 version.workspace = true
 edition = "2021"
 
-[profile.release]
-debug = false
-strip = true
-codegen-units = 1
-opt-level = "z"
-lto = true
-panic = "abort"
-
 [dependencies]
 api-shared   = { path = "../api-shared" }
 parser       = { path = "../parser" }
