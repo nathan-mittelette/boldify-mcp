@@ -1,6 +1,6 @@
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{ServerCapabilities, ServerInfo},
+    model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     schemars, tool, tool_router, ServerHandler,
 };
 use service::ContentService;
@@ -44,13 +44,13 @@ impl BoldifyServer {
     async fn convert(
         &self,
         Parameters(ConvertParams { syntax, content }): Parameters<ConvertParams>,
-    ) -> String {
+    ) -> CallToolResult {
         info!(syntax, content_len = content.len(), "mcp convert called");
         match self.svc.convert(&syntax, &content) {
-            Ok(result) => result,
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
             Err(e) => {
                 warn!(error = %e, syntax, "mcp convert failed");
-                format!("Erreur : {}", e)
+                CallToolResult::error(vec![Content::text(e.to_string())])
             }
         }
     }
@@ -61,14 +61,17 @@ impl BoldifyServer {
     async fn list_syntaxes(
         &self,
         Parameters(ListSyntaxesParams { syntax }): Parameters<ListSyntaxesParams>,
-    ) -> String {
+    ) -> CallToolResult {
         info!(syntax, "mcp list_syntaxes called");
         match self.svc.list_syntaxes(&syntax) {
-            Ok(symbols) => serde_json::to_string_pretty(&symbols)
-                .unwrap_or_else(|_| "Erreur de sérialisation".to_string()),
+            Ok(symbols) => {
+                let text = serde_json::to_string_pretty(&symbols)
+                    .expect("serialization of Vec<SupportedSymbol> cannot fail");
+                CallToolResult::success(vec![Content::text(text)])
+            }
             Err(e) => {
                 warn!(error = %e, syntax, "mcp list_syntaxes failed");
-                format!("Erreur : {}", e)
+                CallToolResult::error(vec![Content::text(e.to_string())])
             }
         }
     }
@@ -91,7 +94,20 @@ mod tests {
         BoldifyServer::new()
     }
 
-    async fn convert(s: &BoldifyServer, syntax: &str, content: &str) -> String {
+    fn text_of(result: &CallToolResult) -> &str {
+        result
+            .content
+            .first()
+            .and_then(|c| c.as_text())
+            .map(|t| t.text.as_str())
+            .unwrap_or("")
+    }
+
+    fn is_error(result: &CallToolResult) -> bool {
+        result.is_error == Some(true)
+    }
+
+    async fn convert(s: &BoldifyServer, syntax: &str, content: &str) -> CallToolResult {
         s.convert(Parameters(ConvertParams {
             syntax: syntax.to_string(),
             content: content.to_string(),
@@ -99,7 +115,7 @@ mod tests {
         .await
     }
 
-    async fn list_syntaxes(s: &BoldifyServer, syntax: &str) -> String {
+    async fn list_syntaxes(s: &BoldifyServer, syntax: &str) -> CallToolResult {
         s.list_syntaxes(Parameters(ListSyntaxesParams {
             syntax: syntax.to_string(),
         }))
@@ -110,47 +126,49 @@ mod tests {
     async fn convert_markdown_valide_retourne_texte() {
         let s = server();
         let result = convert(&s, "markdown", "texte simple").await;
-        assert!(!result.is_empty());
-        assert!(!result.starts_with("Erreur"));
+        assert!(!is_error(&result));
+        assert!(!text_of(&result).is_empty());
     }
 
     #[tokio::test]
     async fn convert_syntaxe_inconnue_retourne_message_erreur() {
         let s = server();
         let result = convert(&s, "xml", "contenu").await;
-        assert!(result.starts_with("Erreur"));
-        assert!(result.contains("xml"));
+        assert!(is_error(&result));
+        assert!(text_of(&result).contains("xml"));
     }
 
     #[tokio::test]
     async fn convert_markdown_avec_symbole_non_supporte_retourne_erreur() {
         let s = server();
         let result = convert(&s, "markdown", "# titre").await;
-        assert!(result.starts_with("Erreur"));
-        assert!(result.contains("#"));
+        assert!(is_error(&result));
+        assert!(text_of(&result).contains("#"));
     }
 
     #[tokio::test]
     async fn convert_contenu_vide_retourne_chaine_vide() {
         let s = server();
         let result = convert(&s, "markdown", "").await;
-        assert_eq!(result, "");
+        assert!(!is_error(&result));
+        assert_eq!(text_of(&result), "");
     }
 
     #[tokio::test]
     async fn convert_markdown_gras_retourne_unicode() {
         let s = server();
         let result = convert(&s, "markdown", "**Bonjour**").await;
-        assert!(!result.starts_with("Erreur"));
-        assert!(!result.contains("Bonjour"));
+        assert!(!is_error(&result));
+        assert!(!text_of(&result).contains("Bonjour"));
     }
 
     #[tokio::test]
     async fn list_syntaxes_markdown_retourne_json_valide() {
         let s = server();
         let result = list_syntaxes(&s, "markdown").await;
+        assert!(!is_error(&result));
         let parsed: serde_json::Value =
-            serde_json::from_str(&result).expect("La réponse doit être du JSON valide");
+            serde_json::from_str(text_of(&result)).expect("La réponse doit être du JSON valide");
         assert!(parsed.is_array());
     }
 
@@ -158,7 +176,8 @@ mod tests {
     async fn list_syntaxes_html_retourne_json_valide() {
         let s = server();
         let result = list_syntaxes(&s, "html").await;
-        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert!(!is_error(&result));
+        let parsed: serde_json::Value = serde_json::from_str(text_of(&result)).unwrap();
         assert!(parsed.is_array());
         assert!(!parsed.as_array().unwrap().is_empty());
     }
@@ -167,16 +186,18 @@ mod tests {
     async fn list_syntaxes_syntaxe_inconnue_retourne_message_erreur() {
         let s = server();
         let result = list_syntaxes(&s, "toml").await;
-        assert!(result.starts_with("Erreur"));
-        assert!(result.contains("toml"));
+        assert!(is_error(&result));
+        assert!(text_of(&result).contains("toml"));
     }
 
     #[tokio::test]
     async fn list_syntaxes_markdown_contient_champs_requis() {
         let s = server();
         let result = list_syntaxes(&s, "markdown").await;
-        assert!(result.contains("symbol"));
-        assert!(result.contains("description"));
-        assert!(result.contains("example"));
+        assert!(!is_error(&result));
+        let text = text_of(&result);
+        assert!(text.contains("symbol"));
+        assert!(text.contains("description"));
+        assert!(text.contains("example"));
     }
 }

@@ -1,6 +1,6 @@
-use api_shared::{bad_request, body_bytes, ok_json};
+use api_shared::{body_bytes, error_response, ok_json};
 use lambda_http::{run, service_fn, Body, Error, Request, Response};
-use service::ContentService;
+use service::{ContentService, ServiceError};
 use tracing::{info, warn};
 
 #[derive(serde::Deserialize)]
@@ -27,7 +27,7 @@ async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, E
         Ok(d) => d,
         Err(e) => {
             warn!(error = %e, "invalid JSON body");
-            return bad_request(&format!("JSON invalide : {}", e));
+            return error_response("INVALID_JSON", &format!("JSON invalide : {}", e));
         }
     };
 
@@ -35,8 +35,21 @@ async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, E
         Ok(result) => ok_json(serde_json::json!({ "result": result }).to_string()),
         Err(e) => {
             warn!(error = %e, syntax = %dto.syntax, "convert failed");
-            bad_request(&e.to_string())
+            error_response(service_error_code(&e), &e.to_string())
         }
+    }
+}
+
+fn service_error_code(e: &ServiceError) -> &'static str {
+    use parser::ParseError;
+    match e {
+        ServiceError::UnsupportedSyntax(_) => "UNSUPPORTED_SYNTAX",
+        ServiceError::InputTooLarge { .. } => "INPUT_TOO_LARGE",
+        ServiceError::Parse(ParseError::UnsupportedSymbol { .. }) => "UNSUPPORTED_SYMBOL",
+        ServiceError::Parse(ParseError::NestingTooDeep { .. }) => "NESTING_TOO_DEEP",
+        ServiceError::Parse(ParseError::UnclosedTag { .. }) => "UNCLOSED_TAG",
+        ServiceError::Parse(ParseError::InvalidHtml(_)) => "INVALID_HTML",
+        ServiceError::Parse(ParseError::InputTooLarge { .. }) => "INPUT_TOO_LARGE",
     }
 }
 
@@ -75,12 +88,12 @@ mod tests {
 
         let dto: ConvertRequest = match serde_json::from_slice(&bytes) {
             Ok(d) => d,
-            Err(e) => return bad_request(&format!("JSON invalide : {}", e)),
+            Err(e) => return error_response("INVALID_JSON", &format!("JSON invalide : {}", e)),
         };
 
         match svc.convert(&dto.syntax, &dto.content) {
             Ok(result) => ok_json(serde_json::json!({ "result": result }).to_string()),
-            Err(e) => bad_request(&e.to_string()),
+            Err(e) => error_response(service_error_code(&e), &e.to_string()),
         }
     }
 

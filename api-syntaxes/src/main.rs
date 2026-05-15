@@ -1,6 +1,6 @@
-use api_shared::{bad_request, ok_json};
+use api_shared::{error_response, ok_json};
 use lambda_http::{run, service_fn, Body, Error, Request, Response};
-use service::ContentService;
+use service::{ContentService, ServiceError};
 use tracing::{info, warn};
 
 #[tokio::main]
@@ -20,15 +20,29 @@ async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, E
     match syntax {
         None => {
             warn!("missing 'syntax' query parameter");
-            bad_request("Paramètre 'syntax' manquant. Valeurs acceptées : markdown, html")
+            error_response(
+                "MISSING_PARAMETER",
+                "Paramètre 'syntax' manquant. Valeurs acceptées : markdown, html",
+            )
         }
         Some(s) => match svc.list_syntaxes(&s) {
-            Ok(symbols) => ok_json(serde_json::to_string(&symbols)?),
+            Ok(symbols) => ok_json(
+                serde_json::to_string(&symbols)
+                    .expect("serialization of Vec<SupportedSymbol> cannot fail"),
+            ),
             Err(e) => {
                 warn!(error = %e, syntax = %s, "list_syntaxes failed");
-                bad_request(&e.to_string())
+                error_response(service_error_code(&e), &e.to_string())
             }
         },
+    }
+}
+
+fn service_error_code(e: &ServiceError) -> &'static str {
+    match e {
+        ServiceError::UnsupportedSyntax(_) => "UNSUPPORTED_SYNTAX",
+        ServiceError::InputTooLarge { .. } => "INPUT_TOO_LARGE",
+        ServiceError::Parse(_) => "PARSE_ERROR",
     }
 }
 
@@ -75,10 +89,16 @@ mod tests {
         let syntax = extract_query_param(&req, "syntax");
 
         match syntax {
-            None => bad_request("Paramètre 'syntax' manquant. Valeurs acceptées : markdown, html"),
+            None => error_response(
+                "MISSING_PARAMETER",
+                "Paramètre 'syntax' manquant. Valeurs acceptées : markdown, html",
+            ),
             Some(s) => match svc.list_syntaxes(&s) {
-                Ok(symbols) => ok_json(serde_json::to_string(&symbols)?),
-                Err(e) => bad_request(&e.to_string()),
+                Ok(symbols) => ok_json(
+                    serde_json::to_string(&symbols)
+                        .expect("serialization of Vec<SupportedSymbol> cannot fail"),
+                ),
+                Err(e) => error_response(service_error_code(&e), &e.to_string()),
             },
         }
     }

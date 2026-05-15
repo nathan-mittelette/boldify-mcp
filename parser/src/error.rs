@@ -1,5 +1,8 @@
 use std::fmt;
 
+const SYNTAXES_HTTP_ENDPOINT: &str = "GET /syntaxes";
+const SYNTAXES_MCP_COMMAND: &str = "mcp list";
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SourcePosition {
     pub line: usize,
@@ -22,8 +25,10 @@ pub enum ParseError {
     #[error(
         "Symbole non supporté : `{symbol}` à la position {position}.\n\
          Consultez la liste des syntaxes supportées via :\n\
-         - API HTTP : GET /syntaxes\n\
-         - MCP CLI  : mcp list"
+         - API HTTP : {endpoint}\n\
+         - MCP CLI  : {mcp_cmd}",
+        endpoint = SYNTAXES_HTTP_ENDPOINT,
+        mcp_cmd = SYNTAXES_MCP_COMMAND
     )]
     UnsupportedSymbol {
         symbol: String,

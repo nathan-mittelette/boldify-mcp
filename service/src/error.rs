@@ -8,9 +8,6 @@ pub enum ServiceError {
     #[error("Syntaxe non supportée : '{0}'. Syntaxes disponibles : markdown, html")]
     UnsupportedSyntax(String),
 
-    #[error("Contenu manquant")]
-    EmptyContent,
-
     #[error("Contenu trop volumineux : {found} octets (maximum : {max})")]
     InputTooLarge { found: usize, max: usize },
 }

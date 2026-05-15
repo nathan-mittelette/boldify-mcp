@@ -1,7 +1,13 @@
 use lambda_http::{Body, Error, Response};
 
-pub fn bad_request(msg: &str) -> Result<Response<Body>, Error> {
-    let body = serde_json::json!({ "error": msg }).to_string();
+pub fn error_response(code: &str, message: &str) -> Result<Response<Body>, Error> {
+    let body = serde_json::json!({
+        "error": {
+            "code": code,
+            "message": message
+        }
+    })
+    .to_string();
     Ok(Response::builder()
         .status(400)
         .header("Content-Type", "application/json")
