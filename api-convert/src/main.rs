@@ -181,6 +181,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn champ_content_manquant_retourne_400() {
+        let svc = MockSvc {
+            result: Ok(String::new()),
+        };
+        let req = build_post_request(r#"{"syntax":"markdown"}"#);
+        let resp = handler_with(req, &svc).await.unwrap();
+        assert_eq!(resp.status(), 400);
+    }
+
+    #[tokio::test]
     async fn body_json_invalide_contient_message_erreur() {
         let svc = MockSvc {
             result: Ok(String::new()),

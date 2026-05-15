@@ -242,4 +242,20 @@ mod tests {
         let result = svc.convert("markdown", &at_limit);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn conversions_concurrentes_coherentes() {
+        use std::sync::Arc;
+        let svc = Arc::new(ContentService::new());
+        let handles: Vec<_> = (0..20)
+            .map(|_| {
+                let svc = Arc::clone(&svc);
+                std::thread::spawn(move || svc.convert("markdown", "**bold**").unwrap())
+            })
+            .collect();
+        let expected = svc.convert("markdown", "**bold**").unwrap();
+        for handle in handles {
+            assert_eq!(handle.join().unwrap(), expected);
+        }
+    }
 }
