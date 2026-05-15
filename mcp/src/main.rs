@@ -13,6 +13,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use rmcp::ServiceExt;
     use server::BoldifyServer;
 
+    match std::env::args().nth(1).as_deref() {
+        Some("--version") | Some("-V") => {
+            println!("boldify-mcp {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        Some("--help") | Some("-h") => {
+            println!("boldify-mcp {}", env!("CARGO_PKG_VERSION"));
+            println!();
+            println!("USAGE:");
+            println!("  boldify-mcp             Start the MCP server (stdin/stdout)");
+            println!("  boldify-mcp --version   Print version");
+            println!("  boldify-mcp --help      Print this help");
+            return Ok(());
+        }
+        _ => {}
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(std::io::stderr)

@@ -39,6 +39,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set version from tag
+        run: sed -i.bak "s/^version *= *.*/version      = \"${GITHUB_REF_NAME#v}\"/" Cargo.toml && rm -f Cargo.toml.bak
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -86,6 +89,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set version from tag
+        run: sed -i.bak "s/^version *= *.*/version      = \"${GITHUB_REF_NAME#v}\"/" Cargo.toml && rm -f Cargo.toml.bak
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

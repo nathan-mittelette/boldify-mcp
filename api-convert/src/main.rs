@@ -15,6 +15,7 @@ async fn main() -> Result<(), Error> {
         .json()
         .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
         .init();
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "api-convert starting");
     let svc = ContentService::new();
     run(service_fn(|req| handler(req, &svc))).await
 }
