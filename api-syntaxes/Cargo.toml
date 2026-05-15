@@ -12,8 +12,9 @@ lto = true
 panic = "abort"
 
 [dependencies]
+api-shared   = { path = "../api-shared" }
 parser       = { path = "../parser" }
 service      = { path = "../service" }
-lambda_http  = "1.1"
+lambda_http  = "1.2"
 serde_json   = "1"
 tokio        = { version = "1", features = ["full"] }
