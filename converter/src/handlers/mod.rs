@@ -2,6 +2,7 @@ pub mod accents;
 pub mod bold;
 pub mod handler;
 pub mod italic;
+pub(crate) mod shared;
 pub mod strikethrough;
 pub mod surline;
 pub mod underline;

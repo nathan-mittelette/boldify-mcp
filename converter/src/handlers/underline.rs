@@ -1,7 +1,7 @@
 use once_cell::sync::OnceCell;
-use unicode_segmentation::UnicodeSegmentation;
 
 use super::handler::FontHandler;
+use super::shared::apply_combining_mark;
 
 pub struct UnderlineHandler;
 
@@ -13,15 +13,7 @@ pub fn underline_handler() -> &'static UnderlineHandler {
 
 impl FontHandler for UnderlineHandler {
     fn apply(&self, text: &str) -> String {
-        text.graphemes(true)
-            .map(|g| {
-                if g == " " || g == "\n" {
-                    g.to_string()
-                } else {
-                    format!("{}\u{0332}", g)
-                }
-            })
-            .collect()
+        apply_combining_mark(text, "\u{0332}")
     }
 }
 
@@ -46,8 +38,6 @@ mod tests {
     fn underline_preserve_newline() {
         assert_eq!(UnderlineHandler.apply("\n"), "\n");
     }
-
-    // ── Tâche 05b ────────────────────────────────────────────────────────────
 
     #[test]
     fn underline_chaque_char_a_son_combining() {

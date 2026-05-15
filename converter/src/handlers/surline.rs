@@ -1,7 +1,7 @@
 use once_cell::sync::OnceCell;
-use unicode_segmentation::UnicodeSegmentation;
 
 use super::handler::FontHandler;
+use super::shared::apply_combining_mark;
 
 pub struct SurlineHandler;
 
@@ -13,15 +13,7 @@ pub fn surline_handler() -> &'static SurlineHandler {
 
 impl FontHandler for SurlineHandler {
     fn apply(&self, text: &str) -> String {
-        text.graphemes(true)
-            .map(|g| {
-                if g == " " || g == "\n" {
-                    g.to_string()
-                } else {
-                    format!("{}\u{0305}", g)
-                }
-            })
-            .collect()
+        apply_combining_mark(text, "\u{0305}")
     }
 }
 

@@ -1,7 +1,7 @@
 use once_cell::sync::OnceCell;
-use unicode_segmentation::UnicodeSegmentation;
 
 use super::handler::FontHandler;
+use super::shared::apply_combining_mark;
 
 pub struct StrikethroughHandler;
 
@@ -13,15 +13,7 @@ pub fn strikethrough_handler() -> &'static StrikethroughHandler {
 
 impl FontHandler for StrikethroughHandler {
     fn apply(&self, text: &str) -> String {
-        text.graphemes(true)
-            .map(|g| {
-                if g == " " || g == "\n" {
-                    g.to_string()
-                } else {
-                    format!("{}\u{0336}", g)
-                }
-            })
-            .collect()
+        apply_combining_mark(text, "\u{0336}")
     }
 }
 
@@ -45,8 +37,6 @@ mod tests {
     fn strikethrough_preserve_newline() {
         assert_eq!(StrikethroughHandler.apply("\n"), "\n");
     }
-
-    // ── Tâche 05b ────────────────────────────────────────────────────────────
 
     #[test]
     fn strikethrough_chaque_char_a_son_combining_stroke() {
