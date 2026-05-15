@@ -1,11 +1,11 @@
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 
 use super::handler::FontHandler;
 use super::shared::apply_combining_mark;
 
 pub struct UnderlineHandler;
 
-static INSTANCE: OnceCell<UnderlineHandler> = OnceCell::new();
+static INSTANCE: OnceLock<UnderlineHandler> = OnceLock::new();
 
 pub fn underline_handler() -> &'static UnderlineHandler {
     INSTANCE.get_or_init(|| UnderlineHandler)

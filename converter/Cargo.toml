@@ -6,4 +6,3 @@ edition = "2021"
 [dependencies]
 parser               = { path = "../parser" }
 unicode-segmentation = "1"
-once_cell            = "1"

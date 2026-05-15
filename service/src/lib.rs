@@ -3,6 +3,7 @@ pub use error::ServiceError;
 
 use converter::convert;
 use parser::{HtmlParser, MarkdownParser, Parser, SupportedSymbol};
+use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct ContentService {
@@ -30,7 +31,16 @@ impl ContentService {
     /// Parses `content` with the `syntax` parser, then converts to Unicode.
     pub fn convert(&self, syntax: &str, content: &str) -> Result<String, ServiceError> {
         const MAX_SIZE: usize = 10 * 1024 * 1024;
+
+        info!(syntax, content_len = content.len(), "convert called");
+
         if content.len() > MAX_SIZE {
+            warn!(
+                syntax,
+                content_len = content.len(),
+                max = MAX_SIZE,
+                "input too large"
+            );
             return Err(ServiceError::InputTooLarge {
                 found: content.len(),
                 max: MAX_SIZE,
@@ -47,7 +57,9 @@ impl ContentService {
             other => return Err(ServiceError::UnsupportedSyntax(other.to_string())),
         };
 
-        Ok(convert(&nodes))
+        let result = convert(&nodes);
+        info!(syntax, output_len = result.len(), "convert succeeded");
+        Ok(result)
     }
 }
 

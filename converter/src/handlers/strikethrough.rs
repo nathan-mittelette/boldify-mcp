@@ -1,11 +1,11 @@
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 
 use super::handler::FontHandler;
 use super::shared::apply_combining_mark;
 
 pub struct StrikethroughHandler;
 
-static INSTANCE: OnceCell<StrikethroughHandler> = OnceCell::new();
+static INSTANCE: OnceLock<StrikethroughHandler> = OnceLock::new();
 
 pub fn strikethrough_handler() -> &'static StrikethroughHandler {
     INSTANCE.get_or_init(|| StrikethroughHandler)

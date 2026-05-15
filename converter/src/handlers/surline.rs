@@ -1,11 +1,11 @@
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 
 use super::handler::FontHandler;
 use super::shared::apply_combining_mark;
 
 pub struct SurlineHandler;
 
-static INSTANCE: OnceCell<SurlineHandler> = OnceCell::new();
+static INSTANCE: OnceLock<SurlineHandler> = OnceLock::new();
 
 pub fn surline_handler() -> &'static SurlineHandler {
     INSTANCE.get_or_init(|| SurlineHandler)

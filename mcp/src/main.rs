@@ -13,6 +13,11 @@ async fn main() -> anyhow::Result<()> {
     use rmcp::ServiceExt;
     use server::BoldifyServer;
 
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .init();
+
     let service = BoldifyServer::new().serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
@@ -25,6 +30,10 @@ async fn main() -> anyhow::Result<()> {
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
     use server::BoldifyServer;
+
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
 
     let service = StreamableHttpService::new(
         || Ok(BoldifyServer::new()),
@@ -39,13 +48,14 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/health",
             axum::routing::get(|| async {
-                println!("Health check called");
+                tracing::info!("health check");
                 axum::Json(serde_json::json!({ "status": "up" }))
             }),
         )
         .nest_service("/mcp", service);
     let port = std::env::var("AWS_LWA_PORT").unwrap_or_else(|_| "3000".to_string());
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+    tracing::info!(port, "HTTP server listening");
     axum::serve(listener, router)
         .with_graceful_shutdown(async {
             tokio::signal::ctrl_c().await.unwrap();

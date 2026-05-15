@@ -1,21 +1,33 @@
 use api_shared::{bad_request, ok_json};
 use lambda_http::{run, service_fn, Body, Error, Request, Response};
 use service::ContentService;
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt()
+        .json()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+        .init();
     let svc = ContentService::new();
     run(service_fn(|req| handler(req, &svc))).await
 }
 
 async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, Error> {
+    info!(method = %req.method(), path = %req.uri().path(), "request received");
     let syntax = extract_query_param(&req, "syntax");
 
     match syntax {
-        None => bad_request("Paramètre 'syntax' manquant. Valeurs acceptées : markdown, html"),
+        None => {
+            warn!("missing 'syntax' query parameter");
+            bad_request("Paramètre 'syntax' manquant. Valeurs acceptées : markdown, html")
+        }
         Some(s) => match svc.list_syntaxes(&s) {
             Ok(symbols) => ok_json(serde_json::to_string(&symbols)?),
-            Err(e) => bad_request(&e.to_string()),
+            Err(e) => {
+                warn!(error = %e, syntax = %s, "list_syntaxes failed");
+                bad_request(&e.to_string())
+            }
         },
     }
 }

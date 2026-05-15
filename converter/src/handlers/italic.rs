@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::accents::decompose_accent;
@@ -48,7 +48,7 @@ impl ItalicHandler {
     }
 }
 
-static INSTANCE: OnceCell<ItalicHandler> = OnceCell::new();
+static INSTANCE: OnceLock<ItalicHandler> = OnceLock::new();
 
 pub fn italic_handler() -> &'static ItalicHandler {
     INSTANCE.get_or_init(ItalicHandler::new)

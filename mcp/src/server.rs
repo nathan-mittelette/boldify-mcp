@@ -4,6 +4,7 @@ use rmcp::{
     schemars, tool, tool_router, ServerHandler,
 };
 use service::ContentService;
+use tracing::{info, warn};
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ConvertParams {
@@ -44,9 +45,13 @@ impl BoldifyServer {
         &self,
         Parameters(ConvertParams { syntax, content }): Parameters<ConvertParams>,
     ) -> String {
+        info!(syntax, content_len = content.len(), "mcp convert called");
         match self.svc.convert(&syntax, &content) {
             Ok(result) => result,
-            Err(e) => format!("Erreur : {}", e),
+            Err(e) => {
+                warn!(error = %e, syntax, "mcp convert failed");
+                format!("Erreur : {}", e)
+            }
         }
     }
 
@@ -57,10 +62,14 @@ impl BoldifyServer {
         &self,
         Parameters(ListSyntaxesParams { syntax }): Parameters<ListSyntaxesParams>,
     ) -> String {
+        info!(syntax, "mcp list_syntaxes called");
         match self.svc.list_syntaxes(&syntax) {
             Ok(symbols) => serde_json::to_string_pretty(&symbols)
                 .unwrap_or_else(|_| "Erreur de sérialisation".to_string()),
-            Err(e) => format!("Erreur : {}", e),
+            Err(e) => {
+                warn!(error = %e, syntax, "mcp list_syntaxes failed");
+                format!("Erreur : {}", e)
+            }
         }
     }
 }

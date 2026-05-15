@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::accents::decompose_accent;
@@ -53,7 +53,7 @@ impl BoldHandler {
     }
 }
 
-static INSTANCE: OnceCell<BoldHandler> = OnceCell::new();
+static INSTANCE: OnceLock<BoldHandler> = OnceLock::new();
 
 pub fn bold_handler() -> &'static BoldHandler {
     INSTANCE.get_or_init(BoldHandler::new)

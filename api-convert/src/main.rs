@@ -1,6 +1,7 @@
 use api_shared::{bad_request, body_bytes, ok_json};
 use lambda_http::{run, service_fn, Body, Error, Request, Response};
 use service::ContentService;
+use tracing::{info, warn};
 
 #[derive(serde::Deserialize)]
 struct ConvertRequest {
@@ -10,21 +11,32 @@ struct ConvertRequest {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt()
+        .json()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+        .init();
     let svc = ContentService::new();
     run(service_fn(|req| handler(req, &svc))).await
 }
 
 async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, Error> {
+    info!(method = %req.method(), path = %req.uri().path(), "request received");
     let bytes = body_bytes(req.body());
 
     let dto: ConvertRequest = match serde_json::from_slice(&bytes) {
         Ok(d) => d,
-        Err(e) => return bad_request(&format!("JSON invalide : {}", e)),
+        Err(e) => {
+            warn!(error = %e, "invalid JSON body");
+            return bad_request(&format!("JSON invalide : {}", e));
+        }
     };
 
     match svc.convert(&dto.syntax, &dto.content) {
         Ok(result) => ok_json(serde_json::json!({ "result": result }).to_string()),
-        Err(e) => bad_request(&e.to_string()),
+        Err(e) => {
+            warn!(error = %e, syntax = %dto.syntax, "convert failed");
+            bad_request(&e.to_string())
+        }
     }
 }
 
