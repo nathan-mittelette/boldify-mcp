@@ -8,7 +8,7 @@ compile_error!("Choisissez une feature : --features cli  ou  --features http");
 
 #[cfg(feature = "cli")]
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use rmcp::transport::stdio;
     use rmcp::ServiceExt;
     use server::BoldifyServer;
@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
 
 #[cfg(feature = "http")]
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };

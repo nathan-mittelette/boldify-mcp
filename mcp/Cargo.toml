@@ -14,7 +14,7 @@ panic = "abort"
 [features]
 default = []
 cli     = ["rmcp/transport-io", "tokio/io-std", "tokio/rt-multi-thread"]
-http    = ["rmcp/transport-streamable-http-server", "tokio/full", "dep:axum"]
+http    = ["rmcp/transport-streamable-http-server", "tokio/net", "tokio/signal", "tokio/rt-multi-thread", "tokio/macros", "dep:axum"]
 
 [dependencies]
 service    = { path = "../service" }
@@ -22,7 +22,6 @@ rmcp       = { version = "1.5" }
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio      = { version = "1", features = ["rt", "macros"] }
-anyhow              = "1"
 axum                = { version = "0.8", optional = true }
 tracing             = "0.1"
 tracing-subscriber  = { version = "0.3", features = ["env-filter"] }
