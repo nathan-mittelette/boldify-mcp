@@ -11,14 +11,6 @@ pub struct MarkdownParser;
 
 impl Parser for MarkdownParser {
     fn parse(&self, input: &str) -> Result<Vec<ContainerNode>, ParseError> {
-        const MAX_SIZE: usize = 10 * 1024 * 1024;
-        if input.len() > MAX_SIZE {
-            return Err(ParseError::InputTooLarge {
-                found: input.len(),
-                max: MAX_SIZE,
-            });
-        }
-
         let lines = collect_lines(input);
         let mut nodes = Vec::new();
         let mut id_gen = NodeIdGen::new();

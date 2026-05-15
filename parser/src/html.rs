@@ -20,6 +20,42 @@ struct OpenTag {
     opened_at: SourcePosition,
 }
 
+struct PositionTracker {
+    line: usize,
+    col: usize,
+}
+
+impl PositionTracker {
+    fn new() -> Self {
+        Self { line: 1, col: 1 }
+    }
+
+    fn advance_str(&mut self, s: &str) {
+        for c in s.chars() {
+            self.advance_char(c);
+        }
+    }
+
+    fn advance_char(&mut self, c: char) {
+        if c == '\n' {
+            self.line += 1;
+            self.col = 1;
+        } else {
+            self.col += 1;
+        }
+    }
+
+    fn current(&self, byte_offset: usize) -> SourcePosition {
+        SourcePosition {
+            line: self.line,
+            column: self.col,
+            byte_offset,
+        }
+    }
+}
+
+const MAX_DEPTH: usize = 64;
+
 impl Parser for HtmlParser {
     fn parse(&self, input: &str) -> Result<Vec<ContainerNode>, ParseError> {
         if input.is_empty() {
@@ -30,128 +66,63 @@ impl Parser for HtmlParser {
         let mut result: Vec<ContainerNode> = Vec::new();
         let mut text_buf = String::new();
         let mut id_gen = NodeIdGen::new();
+        let mut pos = PositionTracker::new();
 
         let bytes = input.as_bytes();
         let mut i = 0;
-        let mut line = 1usize;
-        let mut col = 1usize;
 
         while i < input.len() {
-            if bytes[i] == b'<' {
-                flush_text(&mut text_buf, &mut stack, &mut result, i, &mut id_gen);
-
-                let rest = &input[i..];
-
-                // HTML comment <!-- ... -->
-                if rest.starts_with("<!--") {
-                    let end = rest.find("-->").map(|p| i + p + 3).unwrap_or(input.len());
-                    advance_pos(&input[i..end], &mut line, &mut col);
-                    i = end;
-                    continue;
-                }
-
-                // DOCTYPE <!...>
-                if rest.starts_with("<!") {
-                    let end = rest.find('>').map(|p| i + p + 1).unwrap_or(input.len());
-                    advance_pos(&input[i..end], &mut line, &mut col);
-                    i = end;
-                    continue;
-                }
-
-                let pos = SourcePosition {
-                    line,
-                    column: col,
-                    byte_offset: i,
-                };
-
-                // Closing tag </tag>
-                if rest.starts_with("</") {
-                    let (tag_name, tag_end) = extract_tag_name(&input[i + 2..]);
-                    let abs_end = i + 2 + tag_end;
-
-                    // </p> at root: no \n emitted — \n is only emitted on <p> opening
-                    if tag_name != "p" || !stack.is_empty() {
-                        pop_tag(&tag_name, &mut stack, &mut result, &mut id_gen);
-                    }
-
-                    advance_pos(&input[i..abs_end], &mut line, &mut col);
-                    i = abs_end;
-                    continue;
-                }
-
-                // Opening tag <tag ...>
-                let (tag_name, attrs_and_rest) = extract_tag_name(&input[i + 1..]);
-                let tag_end = i + 1 + attrs_and_rest;
-
-                // Check for self-closing />
-                let is_self_closing = input[i + 1..tag_end.min(input.len())]
-                    .trim_end()
-                    .ends_with('/');
-
-                match tag_name.as_str() {
-                    "br" if is_self_closing || tag_name == "br" => {
-                        push_newline(&mut stack, &mut result, &mut id_gen);
-                    }
-                    "p" => {
-                        // <p> at root: \n before content if not the very first element
-                        if stack.is_empty() && result_has_content(&result) {
-                            push_newline(&mut stack, &mut result, &mut id_gen);
-                        }
-                    }
-                    _ => match tag_to_kind(&tag_name) {
-                        Some(kind) => {
-                            // List at root: \n before if not the very first element
-                            if stack.is_empty()
-                                && result_has_content(&result)
-                                && matches!(
-                                    kind,
-                                    TagKind::Container(ContainerType::List)
-                                        | TagKind::Container(ContainerType::OrderedList)
-                                )
-                            {
-                                push_newline(&mut stack, &mut result, &mut id_gen);
-                            }
-                            stack.push(OpenTag {
-                                kind,
-                                tag_name: tag_name.clone(),
-                                children: Vec::new(),
-                                opened_at: pos,
-                            });
-                        }
-                        None => {
-                            return Err(ParseError::UnsupportedSymbol {
-                                symbol: format!("<{}>", tag_name),
-                                position: pos,
-                            });
-                        }
-                    },
-                }
-
-                advance_pos(&input[i..tag_end], &mut line, &mut col);
-                i = tag_end;
-            } else {
+            if bytes[i] != b'<' {
                 let c = input[i..].chars().next().unwrap();
-                // At root level, discard only \n/\r between block tags — preserve spaces in content
+                // At root level, discard only \n/\r between block tags
                 if !stack.is_empty() || (c != '\n' && c != '\r') {
                     text_buf.push(c);
                 }
-                if c == '\n' {
-                    line += 1;
-                    col = 1;
-                } else {
-                    col += 1;
-                }
+                pos.advance_char(c);
                 i += c.len_utf8();
+                continue;
             }
+
+            flush_text(&mut text_buf, &mut stack, &mut result, i, &mut id_gen);
+
+            let rest = &input[i..];
+            let tag_pos = pos.current(i);
+
+            if let Some(end) = skip_comment_or_doctype(rest, i) {
+                pos.advance_str(&input[i..end]);
+                i = end;
+                continue;
+            }
+
+            if rest.starts_with("</") {
+                let (tag_name, tag_end) = extract_tag_name(&input[i + 2..]);
+                let abs_end = i + 2 + tag_end;
+                process_close_tag(&tag_name, &mut stack, &mut result, &mut id_gen);
+                pos.advance_str(&input[i..abs_end]);
+                i = abs_end;
+                continue;
+            }
+
+            let (tag_name, tag_end) = extract_tag_name(&input[i + 1..]);
+            let abs_tag_end = i + 1 + tag_end;
+            let is_self_closing = input[i + 1..abs_tag_end.min(input.len())]
+                .trim_end()
+                .ends_with('/');
+
+            process_open_tag(
+                &tag_name,
+                is_self_closing,
+                tag_pos,
+                &mut stack,
+                &mut result,
+                &mut id_gen,
+            )?;
+
+            pos.advance_str(&input[i..abs_tag_end]);
+            i = abs_tag_end;
         }
 
-        flush_text(
-            &mut text_buf,
-            &mut stack,
-            &mut result,
-            input.len(),
-            &mut id_gen,
-        );
+        flush_text(&mut text_buf, &mut stack, &mut result, input.len(), &mut id_gen);
 
         if let Some(unclosed) = stack.last() {
             return Err(ParseError::UnclosedTag {
@@ -181,6 +152,97 @@ impl Parser for HtmlParser {
     }
 }
 
+/// Returns the absolute end index to skip past a `<!-- -->` comment or `<!...>` doctype.
+/// Returns `None` if the input does not start with either construct.
+fn skip_comment_or_doctype(rest: &str, base: usize) -> Option<usize> {
+    if rest.starts_with("<!--") {
+        let end = rest.find("-->").map(|p| base + p + 3).unwrap_or(base + rest.len());
+        return Some(end);
+    }
+    if rest.starts_with("<!") {
+        let end = rest.find('>').map(|p| base + p + 1).unwrap_or(base + rest.len());
+        return Some(end);
+    }
+    None
+}
+
+fn process_close_tag(
+    tag_name: &str,
+    stack: &mut Vec<OpenTag>,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) {
+    // </p> at root: no \n emitted — \n is only emitted on <p> opening
+    if tag_name != "p" || !stack.is_empty() {
+        pop_tag(tag_name, stack, result, id_gen);
+    }
+}
+
+fn process_open_tag(
+    tag_name: &str,
+    is_self_closing: bool,
+    pos: SourcePosition,
+    stack: &mut Vec<OpenTag>,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) -> Result<(), ParseError> {
+    match tag_name {
+        "br" => {
+            push_newline(stack, result, id_gen);
+        }
+        "p" => {
+            if stack.is_empty() && result_has_content(result) {
+                push_newline(stack, result, id_gen);
+            }
+        }
+        _ if is_self_closing => {}
+        _ => match tag_to_kind(tag_name) {
+            Some(kind) => push_open_tag(kind, tag_name, pos, stack, result, id_gen)?,
+            None => {
+                return Err(ParseError::UnsupportedSymbol {
+                    symbol: format!("<{}>", tag_name),
+                    position: pos,
+                });
+            }
+        },
+    }
+    Ok(())
+}
+
+fn push_open_tag(
+    kind: TagKind,
+    tag_name: &str,
+    pos: SourcePosition,
+    stack: &mut Vec<OpenTag>,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) -> Result<(), ParseError> {
+    // List at root: \n before if not the very first element
+    if stack.is_empty()
+        && result_has_content(result)
+        && matches!(
+            kind,
+            TagKind::Container(ContainerType::List) | TagKind::Container(ContainerType::OrderedList)
+        )
+    {
+        push_newline(stack, result, id_gen);
+    }
+    let new_depth = stack.len() + 1;
+    if new_depth > MAX_DEPTH {
+        return Err(ParseError::NestingTooDeep {
+            depth: new_depth,
+            max: MAX_DEPTH,
+        });
+    }
+    stack.push(OpenTag {
+        kind,
+        tag_name: tag_name.to_string(),
+        children: Vec::new(),
+        opened_at: pos,
+    });
+    Ok(())
+}
+
 fn sym(symbol: &str, description: &str, example: &str) -> SupportedSymbol {
     SupportedSymbol {
         symbol: symbol.to_string(),
@@ -195,7 +257,6 @@ fn extract_tag_name(s: &str) -> (String, usize) {
     let mut name = String::new();
     let mut chars = s.char_indices();
 
-    // Collect tag name characters (letters, digits, hyphens)
     for (_, c) in chars.by_ref() {
         if c.is_alphanumeric() || c == '-' || c == '_' {
             name.push(c.to_ascii_lowercase());
@@ -204,7 +265,6 @@ fn extract_tag_name(s: &str) -> (String, usize) {
         }
     }
 
-    // Advance to closing '>'
     let close = s.find('>').map(|p| p + 1).unwrap_or(s.len());
     (name, close)
 }
@@ -232,17 +292,6 @@ fn result_has_content(result: &[ContainerNode]) -> bool {
             _ => true,
         }),
     })
-}
-
-fn advance_pos(s: &str, line: &mut usize, col: &mut usize) {
-    for c in s.chars() {
-        if c == '\n' {
-            *line += 1;
-            *col = 1;
-        } else {
-            *col += 1;
-        }
-    }
 }
 
 /// Push a `\n` TextNode into the current context (stack top or root result).
@@ -321,76 +370,91 @@ fn pop_tag(
     let pos = stack.iter().rposition(|t| t.tag_name == tag_name);
     if let Some(idx) = pos {
         let open = stack.remove(idx);
-        let children = open.children;
-
-        let node = match open.kind {
-            TagKind::ListItem => InlineNode::ListItem(ListItemNode {
-                base: NodeBase::new(id_gen.next_id(), Span::new(0, 0)),
-                children,
-            }),
-            TagKind::Container(ct) => InlineNode::Container(ContainerNode {
-                base: NodeBase::new(id_gen.next_id(), Span::new(0, 0)),
-                container_type: ct,
-                children,
-            }),
-        };
-
-        if let Some(parent) = stack.last_mut() {
-            parent.children.push(node);
-        } else {
-            match node {
-                InlineNode::Container(c) => {
-                    let is_block = matches!(
-                        c.container_type,
-                        ContainerType::List
-                            | ContainerType::OrderedList
-                            | ContainerType::Blockquote
-                    );
-                    if is_block {
-                        result.push(c);
-                    } else {
-                        // Inline container at root: merge into last Text node
-                        if let Some(last) = result.last_mut() {
-                            if last.container_type == ContainerType::Text {
-                                last.children.push(InlineNode::Container(c));
-                                return;
-                            }
-                        }
-                        let id = id_gen.next_id();
-                        result.push(ContainerNode {
-                            base: NodeBase::new(id, Span::new(0, 0)),
-                            container_type: ContainerType::Text,
-                            children: vec![InlineNode::Container(c)],
-                        });
-                    }
-                }
-                InlineNode::ListItem(li) => {
-                    let id = id_gen.next_id();
-                    result.push(ContainerNode {
-                        base: NodeBase::new(id, Span::new(0, 0)),
-                        container_type: ContainerType::Text,
-                        children: vec![InlineNode::ListItem(li)],
-                    });
-                }
-                InlineNode::Text(t) => {
-                    // Merge into last Text node
-                    if let Some(last) = result.last_mut() {
-                        if last.container_type == ContainerType::Text {
-                            last.children.push(InlineNode::Text(t));
-                            return;
-                        }
-                    }
-                    let id = id_gen.next_id();
-                    result.push(ContainerNode {
-                        base: NodeBase::new(id, Span::new(0, 0)),
-                        container_type: ContainerType::Text,
-                        children: vec![InlineNode::Text(t)],
-                    });
-                }
-            }
-        }
+        let node = close_open_tag(open, id_gen);
+        attach_closed_node(node, stack, result, id_gen);
     }
     // Stray closing tag — silently ignore
+}
+
+fn close_open_tag(open: OpenTag, id_gen: &mut NodeIdGen) -> InlineNode {
+    match open.kind {
+        TagKind::ListItem => InlineNode::ListItem(ListItemNode {
+            base: NodeBase::new(id_gen.next_id(), Span::new(0, 0)),
+            children: open.children,
+        }),
+        TagKind::Container(ct) => InlineNode::Container(ContainerNode {
+            base: NodeBase::new(id_gen.next_id(), Span::new(0, 0)),
+            container_type: ct,
+            children: open.children,
+        }),
+    }
+}
+
+fn attach_closed_node(
+    node: InlineNode,
+    stack: &mut Vec<OpenTag>,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) {
+    if let Some(parent) = stack.last_mut() {
+        parent.children.push(node);
+        return;
+    }
+    attach_to_root(node, result, id_gen);
+}
+
+fn attach_to_root(
+    node: InlineNode,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) {
+    match node {
+        InlineNode::Container(c) => attach_container_to_root(c, result, id_gen),
+        InlineNode::ListItem(li) => {
+            let id = id_gen.next_id();
+            result.push(ContainerNode {
+                base: NodeBase::new(id, Span::new(0, 0)),
+                container_type: ContainerType::Text,
+                children: vec![InlineNode::ListItem(li)],
+            });
+        }
+        InlineNode::Text(t) => merge_or_push_text(InlineNode::Text(t), result, id_gen),
+    }
+}
+
+fn attach_container_to_root(
+    c: ContainerNode,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) {
+    let is_block = matches!(
+        c.container_type,
+        ContainerType::List | ContainerType::OrderedList | ContainerType::Blockquote
+    );
+    if is_block {
+        result.push(c);
+    } else {
+        merge_or_push_text(InlineNode::Container(c), result, id_gen);
+    }
+}
+
+fn merge_or_push_text(
+    node: InlineNode,
+    result: &mut Vec<ContainerNode>,
+    id_gen: &mut NodeIdGen,
+) {
+    if let Some(last) = result.last_mut() {
+        if last.container_type == ContainerType::Text {
+            last.children.push(node);
+            return;
+        }
+    }
+    let id = id_gen.next_id();
+    result.push(ContainerNode {
+        base: NodeBase::new(id, Span::new(0, 0)),
+        container_type: ContainerType::Text,
+        children: vec![node],
+    });
 }
 
 #[cfg(test)]
@@ -975,5 +1039,23 @@ mod tests {
         let input = "<strong>valide</strong><div>invalide</div><em>aussi valide</em>";
         let result = HtmlParser.parse(input);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn imbrication_trop_profonde_retourne_nesting_too_deep() {
+        let open: String = "<strong>".repeat(65);
+        let close: String = "</strong>".repeat(65);
+        let input = format!("{}x{}", open, close);
+        let result = HtmlParser.parse(&input);
+        assert!(matches!(result, Err(ParseError::NestingTooDeep { .. })));
+    }
+
+    #[test]
+    fn imbrication_a_la_limite_est_acceptee() {
+        let open: String = "<strong>".repeat(64);
+        let close: String = "</strong>".repeat(64);
+        let input = format!("{}x{}", open, close);
+        let result = HtmlParser.parse(&input);
+        assert!(result.is_ok());
     }
 }

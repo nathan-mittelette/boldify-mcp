@@ -4,6 +4,8 @@ use crate::{
     id::NodeIdGen,
 };
 
+const MAX_DEPTH: usize = 64;
+
 /// Symboles Markdown reconnus, du plus long au plus court.
 const MARKDOWN_MARKERS: &[(&str, ContainerType)] = &[
     ("**", ContainerType::Bold),
@@ -21,7 +23,7 @@ pub fn parse_inline(
     column_start: usize,
     id_gen: &mut NodeIdGen,
 ) -> Result<Vec<InlineNode>, ParseError> {
-    let outcome = parse_inline_inner(input, line, byte_start, column_start, id_gen, None)?;
+    let outcome = parse_inline_inner(input, line, byte_start, column_start, id_gen, None, 0)?;
     Ok(outcome.nodes)
 }
 
@@ -39,7 +41,14 @@ fn parse_inline_inner(
     column_start: usize,
     id_gen: &mut NodeIdGen,
     closing_marker: Option<&str>,
+    depth: usize,
 ) -> Result<ParseOutcome, ParseError> {
+    if depth > MAX_DEPTH {
+        return Err(ParseError::NestingTooDeep {
+            depth,
+            max: MAX_DEPTH,
+        });
+    }
     let mut nodes = Vec::new();
     let mut current_text = String::new();
     let mut current_text_start = byte_start;
@@ -83,6 +92,7 @@ fn parse_inline_inner(
                 column_start + char_offset + marker_chars,
                 id_gen,
                 Some(marker),
+                depth + 1,
             )?;
 
             if !inner.closed {
@@ -317,5 +327,28 @@ mod tests {
     fn crochet_ouvrant_toujours_interdit() {
         let result = parse_inline("[lien]", 1, 0, 1, &mut NodeIdGen::new());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn imbrication_trop_profonde_retourne_nesting_too_deep() {
+        use crate::error::ParseError;
+        // 65 niveaux d'imbrication : **__**__**__... (alternance bold/underline)
+        let markers = ["**", "__"];
+        let open: String = (0..65).map(|i| markers[i % 2]).collect();
+        let close: String = (0..65).rev().map(|i| markers[i % 2]).collect();
+        let input = format!("{}x{}", open, close);
+        let result = parse_inline(&input, 1, 0, 1, &mut NodeIdGen::new());
+        assert!(matches!(result, Err(ParseError::NestingTooDeep { .. })));
+    }
+
+    #[test]
+    fn imbrication_a_la_limite_est_acceptee() {
+        // 64 niveaux exactement : doit passer
+        let markers = ["**", "__"];
+        let open: String = (0..64).map(|i| markers[i % 2]).collect();
+        let close: String = (0..64).rev().map(|i| markers[i % 2]).collect();
+        let input = format!("{}x{}", open, close);
+        let result = parse_inline(&input, 1, 0, 1, &mut NodeIdGen::new());
+        assert!(result.is_ok());
     }
 }

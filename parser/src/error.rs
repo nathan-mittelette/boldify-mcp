@@ -41,6 +41,9 @@ pub enum ParseError {
         tag: String,
         position: SourcePosition,
     },
+
+    #[error("Imbrication trop profonde : profondeur {depth} (maximum : {max})")]
+    NestingTooDeep { depth: usize, max: usize },
 }
 
 #[cfg(test)]

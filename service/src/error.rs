@@ -10,4 +10,7 @@ pub enum ServiceError {
 
     #[error("Contenu manquant")]
     EmptyContent,
+
+    #[error("Contenu trop volumineux : {found} octets (maximum : {max})")]
+    InputTooLarge { found: usize, max: usize },
 }

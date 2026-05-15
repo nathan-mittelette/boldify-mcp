@@ -29,6 +29,14 @@ impl ContentService {
 
     /// Parses `content` with the `syntax` parser, then converts to Unicode.
     pub fn convert(&self, syntax: &str, content: &str) -> Result<String, ServiceError> {
+        const MAX_SIZE: usize = 10 * 1024 * 1024;
+        if content.len() > MAX_SIZE {
+            return Err(ServiceError::InputTooLarge {
+                found: content.len(),
+                max: MAX_SIZE,
+            });
+        }
+
         if content.trim().is_empty() {
             return Ok(String::new());
         }
@@ -205,5 +213,21 @@ mod tests {
         let parser = MockParser::err("<div>");
         let err = parser.parse("ignored").unwrap_err();
         assert!(matches!(err, ParseError::UnsupportedSymbol { .. }));
+    }
+
+    #[test]
+    fn contenu_trop_grand_retourne_input_too_large() {
+        let svc = ContentService::new();
+        let huge = "a".repeat(10 * 1024 * 1024 + 1);
+        let result = svc.convert("markdown", &huge);
+        assert!(matches!(result, Err(ServiceError::InputTooLarge { .. })));
+    }
+
+    #[test]
+    fn contenu_a_la_limite_est_accepte() {
+        let svc = ContentService::new();
+        let at_limit = "a".repeat(10 * 1024 * 1024);
+        let result = svc.convert("markdown", &at_limit);
+        assert!(result.is_ok());
     }
 }
