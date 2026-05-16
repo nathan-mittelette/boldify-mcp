@@ -3,3 +3,9 @@ name = "boldify-mcp"
 transport = "http"
 url = "https://api.boldify.net/mcp"
 disabled = false
+
+[[mcp_servers]]
+name = "boldify-mcp-local"
+transport = "stdio"
+command = "boldify-mcp"
+disabled = false

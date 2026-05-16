@@ -1,23 +1,31 @@
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
-    schemars, tool, tool_router, ServerHandler,
+    model::{
+        AnnotateAble, GetPromptRequestParams, GetPromptResult, ListPromptsResult,
+        ListResourcesResult, PaginatedRequestParams, Prompt, PromptArgument, PromptMessage,
+        PromptMessageContent, PromptMessageRole, RawResource, ReadResourceRequestParams,
+        ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo,
+    },
+    schemars,
+    service::RequestContext,
+    tool, tool_router, ErrorData as McpError, RoleServer, ServerHandler,
 };
 use service::ContentService;
 use tracing::{info, warn};
 
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct ConvertParams {
-    #[schemars(description = "Input syntax: 'markdown' or 'html'")]
-    pub syntax: String,
-    #[schemars(description = "Content to convert")]
-    pub content: String,
-}
+const URI_SYNTAXES_MARKDOWN: &str = "boldify://syntaxes/markdown";
+const URI_SYNTAXES_HTML: &str = "boldify://syntaxes/html";
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct ListSyntaxesParams {
-    #[schemars(description = "Syntax to inspect: 'markdown' or 'html'")]
+pub struct ConvertParams {
+    #[schemars(description = "Input syntax: 'markdown' or 'html'. \
+        IMPORTANT: read the syntax resources first (boldify://syntaxes/markdown or \
+        boldify://syntaxes/html) to know exactly which symbols are supported. \
+        Using unsupported symbols will return an error. \
+        See the 'convert-markdown' and 'convert-html' prompts for usage examples.")]
     pub syntax: String,
+    #[schemars(description = "Content to convert to Unicode-formatted text")]
+    pub content: String,
 }
 
 #[derive(Clone)]
@@ -34,61 +42,279 @@ impl BoldifyServer {
             tool_router: Self::tool_router(),
         }
     }
+
+    fn syntax_resource_json(&self, syntax: &str) -> String {
+        match self.svc.list_syntaxes(syntax) {
+            Ok(symbols) => serde_json::to_string_pretty(&symbols)
+                .expect("serialization of Vec<SupportedSymbol> cannot fail"),
+            Err(e) => format!("{{\"error\": \"{e}\"}}"),
+        }
+    }
+
+    fn resources_list(&self) -> Vec<rmcp::model::Resource> {
+        vec![
+            syntax_resource(
+                URI_SYNTAXES_MARKDOWN,
+                "Markdown syntax reference",
+                "All supported Markdown symbols with descriptions and examples. \
+                Read this before calling convert with syntax='markdown'.",
+            ),
+            syntax_resource(
+                URI_SYNTAXES_HTML,
+                "HTML syntax reference",
+                "All supported HTML tags with descriptions and examples. \
+                Read this before calling convert with syntax='html'.",
+            ),
+        ]
+    }
+
+    fn read_resource_by_uri(&self, uri: &str) -> Result<ReadResourceResult, McpError> {
+        let syntax = match uri {
+            URI_SYNTAXES_MARKDOWN => "markdown",
+            URI_SYNTAXES_HTML => "html",
+            other => {
+                return Err(McpError::invalid_params(
+                    format!("unknown resource URI: {other}"),
+                    None,
+                ));
+            }
+        };
+        let json = self.syntax_resource_json(syntax);
+        Ok(ReadResourceResult::new(vec![ResourceContents::text(
+            json, uri,
+        )
+        .with_mime_type("application/json")]))
+    }
+
+    fn prompts_list(&self) -> Vec<Prompt> {
+        vec![
+            Prompt::new(
+                "convert-markdown",
+                Some(
+                    "Example showing how to convert Markdown to Unicode-formatted text. \
+                    Demonstrates bold (**), italic (*), strikethrough (~~), \
+                    highlight (==), and list (-) syntax.",
+                ),
+                Some(vec![PromptArgument::new("text")
+                    .with_description(
+                        "Markdown text to convert (optional — omit to see the built-in example)",
+                    )
+                    .with_required(false)]),
+            ),
+            Prompt::new(
+                "convert-html",
+                Some(
+                    "Example showing how to convert HTML to Unicode-formatted text. \
+                    Demonstrates <strong>, <em>, <s>, <mark>, <u>, <ul>/<ol>/<li> tags.",
+                ),
+                Some(vec![PromptArgument::new("text")
+                    .with_description(
+                        "HTML text to convert (optional — omit to see the built-in example)",
+                    )
+                    .with_required(false)]),
+            ),
+        ]
+    }
+
+    fn get_prompt_by_name(
+        &self,
+        name: &str,
+        arguments: Option<&serde_json::Map<String, serde_json::Value>>,
+    ) -> Result<GetPromptResult, McpError> {
+        let user_text = |key: &str| -> Option<&str> {
+            arguments
+                .and_then(|a| a.get(key))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+        };
+
+        match name {
+            "convert-markdown" => {
+                let messages = if let Some(text) = user_text("text") {
+                    vec![PromptMessage::new(
+                        PromptMessageRole::User,
+                        PromptMessageContent::text(format!(
+                            "Convert the following Markdown text to Unicode-formatted text:\n\n{text}"
+                        )),
+                    )]
+                } else {
+                    vec![
+                        PromptMessage::new(
+                            PromptMessageRole::User,
+                            PromptMessageContent::text(
+                                "Convert the following Markdown text to Unicode-formatted text:\n\
+                                \n\
+                                **Product launch** — our new *intelligent* assistant is ~~delayed~~ ==available now==!\n\
+                                \n\
+                                Key highlights:\n\
+                                - ==Outstanding== performance\n\
+                                - **Seamless** integration\n\
+                                - *Easy* to use",
+                            ),
+                        ),
+                        PromptMessage::new(
+                            PromptMessageRole::Assistant,
+                            PromptMessageContent::text(
+                                "I will call the `convert` tool with syntax `markdown` and the content above.\n\
+                                \n\
+                                Result: 𝐏𝐫𝐨𝐝𝐮𝐜𝐭 𝐥𝐚𝐮𝐧𝐜𝐡 — our new 𝘪𝘯𝘵𝘦𝘭𝘭𝘪𝘨𝘦𝘯𝘵 assistant is 𝐚𝐯𝐚𝐢𝐥𝐚𝐛𝐥𝐞 𝐧𝐨𝐰!\n\
+                                \n\
+                                Key highlights:\n\
+                                • 𝙊𝙪𝙩𝙨𝙩𝙖𝙣𝙙𝙞𝙣𝙜 performance\n\
+                                • 𝐒𝐞𝐚𝐦𝐥𝐞𝐬𝐬 integration\n\
+                                • 𝘌𝘢𝘴𝘺 to use",
+                            ),
+                        ),
+                    ]
+                };
+                Ok(GetPromptResult::new(messages))
+            }
+            "convert-html" => {
+                let messages = if let Some(text) = user_text("text") {
+                    vec![PromptMessage::new(
+                        PromptMessageRole::User,
+                        PromptMessageContent::text(format!(
+                            "Convert the following HTML text to Unicode-formatted text:\n\n{text}"
+                        )),
+                    )]
+                } else {
+                    vec![
+                        PromptMessage::new(
+                            PromptMessageRole::User,
+                            PromptMessageContent::text(
+                                "Convert the following HTML text to Unicode-formatted text:\n\
+                                \n\
+                                <p><strong>Product launch</strong> — our new <em>intelligent</em> assistant \
+                                is <s>delayed</s> <mark>available now</mark>!</p>\n\
+                                <ul>\n\
+                                  <li><mark>Outstanding</mark> performance</li>\n\
+                                  <li><strong>Seamless</strong> integration</li>\n\
+                                  <li><em>Easy</em> to use</li>\n\
+                                </ul>",
+                            ),
+                        ),
+                        PromptMessage::new(
+                            PromptMessageRole::Assistant,
+                            PromptMessageContent::text(
+                                "I will call the `convert` tool with syntax `html` and the content above.\n\
+                                \n\
+                                Result: 𝐏𝐫𝐨𝐝𝐮𝐜𝐭 𝐥𝐚𝐮𝐧𝐜𝐡 — our new 𝘪𝘯𝘵𝘦𝘭𝘭𝘪𝘨𝘦𝘯𝘵 assistant is 𝐚𝐯𝐚𝐢𝐥𝐚𝐛𝐥𝐞 𝐧𝐨𝐰!\n\
+                                \n\
+                                • 𝙊𝙪𝙩𝙨𝙩𝙖𝙣𝙙𝙞𝙣𝙜 performance\n\
+                                • 𝐒𝐞𝐚𝐦𝐥𝐞𝐬𝐬 integration\n\
+                                • 𝘌𝘢𝘴𝘺 to use",
+                            ),
+                        ),
+                    ]
+                };
+                Ok(GetPromptResult::new(messages))
+            }
+            other => Err(McpError::invalid_params(
+                format!("unknown prompt: {other}"),
+                None,
+            )),
+        }
+    }
 }
 
 #[tool_router]
 impl BoldifyServer {
     #[tool(
-        description = "Converts HTML or Markdown content to Unicode-formatted text (bold, italic, underline, strikethrough, highlight, etc.)"
+        description = "Converts HTML or Markdown content to Unicode-formatted text \
+            (bold, italic, underline, strikethrough, highlight, lists, etc.). \
+            IMPORTANT — before calling this tool: \
+            (1) Read the syntax resource for your chosen format: \
+                boldify://syntaxes/markdown or boldify://syntaxes/html. \
+            (2) Only use symbols listed in that resource — unsupported symbols (headings, \
+                code blocks, tables, etc.) will cause an error. \
+            (3) Consult the 'convert-markdown' or 'convert-html' prompts to see \
+                correctly composed examples."
     )]
     async fn convert(
         &self,
         Parameters(ConvertParams { syntax, content }): Parameters<ConvertParams>,
-    ) -> CallToolResult {
+    ) -> rmcp::model::CallToolResult {
         info!(syntax, content_len = content.len(), "mcp convert called");
         match self.svc.convert(&syntax, &content) {
-            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Ok(result) => {
+                rmcp::model::CallToolResult::success(vec![rmcp::model::Content::text(result)])
+            }
             Err(e) => {
                 warn!(error = %e, syntax, "mcp convert failed");
-                CallToolResult::error(vec![Content::text(e.to_string())])
-            }
-        }
-    }
-
-    #[tool(
-        description = "Lists the supported symbols/tags for the given syntax (markdown or html)"
-    )]
-    async fn list_syntaxes(
-        &self,
-        Parameters(ListSyntaxesParams { syntax }): Parameters<ListSyntaxesParams>,
-    ) -> CallToolResult {
-        info!(syntax, "mcp list_syntaxes called");
-        match self.svc.list_syntaxes(&syntax) {
-            Ok(symbols) => {
-                let text = serde_json::to_string_pretty(&symbols)
-                    .expect("serialization of Vec<SupportedSymbol> cannot fail");
-                CallToolResult::success(vec![Content::text(text)])
-            }
-            Err(e) => {
-                warn!(error = %e, syntax, "mcp list_syntaxes failed");
-                CallToolResult::error(vec![Content::text(e.to_string())])
+                rmcp::model::CallToolResult::error(vec![rmcp::model::Content::text(e.to_string())])
             }
         }
     }
 }
 
+// ── Resources ────────────────────────────────────────────────────────────────
+
+fn syntax_resource(uri: &str, name: &str, description: &str) -> rmcp::model::Resource {
+    RawResource::new(uri, name)
+        .with_description(description)
+        .with_mime_type("application/json")
+        .no_annotation()
+}
+
+// ── ServerHandler ─────────────────────────────────────────────────────────────
+
 #[rmcp::tool_handler]
 impl ServerHandler for BoldifyServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "Boldify MCP server: converts HTML/Markdown text to Unicode-formatted text.",
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .enable_prompts()
+                .build(),
         )
+        .with_instructions(
+            "Boldify MCP server: converts HTML/Markdown text to Unicode-formatted text. \
+            Read the syntax resources (boldify://syntaxes/markdown, boldify://syntaxes/html) \
+            before calling convert to avoid errors. \
+            Use the convert-markdown or convert-html prompts to see usage examples.",
+        )
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, McpError> {
+        Ok(ListResourcesResult::with_all_items(self.resources_list()))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, McpError> {
+        info!(uri = %request.uri, "mcp read_resource called");
+        self.read_resource_by_uri(&request.uri)
+    }
+
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListPromptsResult, McpError> {
+        Ok(ListPromptsResult::with_all_items(self.prompts_list()))
+    }
+
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<GetPromptResult, McpError> {
+        info!(name = %request.name, "mcp get_prompt called");
+        self.get_prompt_by_name(request.name.as_str(), request.arguments.as_ref())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmcp::{handler::server::wrapper::Parameters, model::CallToolResult};
 
     fn server() -> BoldifyServer {
         BoldifyServer::new()
@@ -115,12 +341,7 @@ mod tests {
         .await
     }
 
-    async fn list_syntaxes(s: &BoldifyServer, syntax: &str) -> CallToolResult {
-        s.list_syntaxes(Parameters(ListSyntaxesParams {
-            syntax: syntax.to_string(),
-        }))
-        .await
-    }
+    // ── convert tool ──────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn convert_valid_markdown_returns_text() {
@@ -162,42 +383,109 @@ mod tests {
         assert!(!text_of(&result).contains("Hello"));
     }
 
-    #[tokio::test]
-    async fn list_syntaxes_markdown_returns_valid_json() {
+    // ── resources ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn resources_list_returns_two_entries() {
         let s = server();
-        let result = list_syntaxes(&s, "markdown").await;
-        assert!(!is_error(&result));
-        let parsed: serde_json::Value =
-            serde_json::from_str(text_of(&result)).expect("Response must be valid JSON");
-        assert!(parsed.is_array());
+        let resources = s.resources_list();
+        assert_eq!(resources.len(), 2);
+        let uris: Vec<&str> = resources.iter().map(|r| r.uri.as_str()).collect();
+        assert!(uris.contains(&URI_SYNTAXES_MARKDOWN));
+        assert!(uris.contains(&URI_SYNTAXES_HTML));
     }
 
-    #[tokio::test]
-    async fn list_syntaxes_html_returns_valid_json() {
+    #[test]
+    fn read_resource_markdown_returns_json_array() {
         let s = server();
-        let result = list_syntaxes(&s, "html").await;
-        assert!(!is_error(&result));
-        let parsed: serde_json::Value = serde_json::from_str(text_of(&result)).unwrap();
-        assert!(parsed.is_array());
-        assert!(!parsed.as_array().unwrap().is_empty());
+        let result = s.read_resource_by_uri(URI_SYNTAXES_MARKDOWN).unwrap();
+        assert_eq!(result.contents.len(), 1);
+        if let ResourceContents::TextResourceContents { text, .. } = &result.contents[0] {
+            let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+            assert!(parsed.is_array());
+            assert!(!parsed.as_array().unwrap().is_empty());
+        } else {
+            panic!("expected TextResourceContents");
+        }
     }
 
-    #[tokio::test]
-    async fn list_syntaxes_unknown_syntax_returns_error_message() {
+    #[test]
+    fn read_resource_html_returns_json_array() {
         let s = server();
-        let result = list_syntaxes(&s, "toml").await;
-        assert!(is_error(&result));
-        assert!(text_of(&result).contains("toml"));
+        let result = s.read_resource_by_uri(URI_SYNTAXES_HTML).unwrap();
+        assert_eq!(result.contents.len(), 1);
+        if let ResourceContents::TextResourceContents { text, .. } = &result.contents[0] {
+            let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+            assert!(parsed.is_array());
+        } else {
+            panic!("expected TextResourceContents");
+        }
     }
 
-    #[tokio::test]
-    async fn list_syntaxes_markdown_contains_required_fields() {
+    #[test]
+    fn read_resource_unknown_uri_returns_error() {
         let s = server();
-        let result = list_syntaxes(&s, "markdown").await;
-        assert!(!is_error(&result));
-        let text = text_of(&result);
-        assert!(text.contains("symbol"));
-        assert!(text.contains("description"));
-        assert!(text.contains("example"));
+        assert!(s.read_resource_by_uri("boldify://unknown").is_err());
+    }
+
+    #[test]
+    fn read_resource_markdown_contains_required_fields() {
+        let s = server();
+        let result = s.read_resource_by_uri(URI_SYNTAXES_MARKDOWN).unwrap();
+        if let ResourceContents::TextResourceContents { text, .. } = &result.contents[0] {
+            assert!(text.contains("symbol"));
+            assert!(text.contains("description"));
+            assert!(text.contains("example"));
+        }
+    }
+
+    // ── prompts ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn prompts_list_returns_two_entries() {
+        let s = server();
+        let prompts = s.prompts_list();
+        assert_eq!(prompts.len(), 2);
+        let names: Vec<&str> = prompts.iter().map(|p| p.name.as_str()).collect();
+        assert!(names.contains(&"convert-markdown"));
+        assert!(names.contains(&"convert-html"));
+    }
+
+    #[test]
+    fn get_prompt_markdown_no_args_returns_two_messages() {
+        let s = server();
+        let result = s.get_prompt_by_name("convert-markdown", None).unwrap();
+        assert_eq!(result.messages.len(), 2);
+        assert_eq!(result.messages[0].role, PromptMessageRole::User);
+        assert_eq!(result.messages[1].role, PromptMessageRole::Assistant);
+    }
+
+    #[test]
+    fn get_prompt_html_no_args_returns_two_messages() {
+        let s = server();
+        let result = s.get_prompt_by_name("convert-html", None).unwrap();
+        assert_eq!(result.messages.len(), 2);
+        assert_eq!(result.messages[0].role, PromptMessageRole::User);
+        assert_eq!(result.messages[1].role, PromptMessageRole::Assistant);
+    }
+
+    #[test]
+    fn get_prompt_with_custom_text_returns_single_user_message() {
+        let s = server();
+        let args = serde_json::json!({"text": "**Hello world**"})
+            .as_object()
+            .cloned()
+            .unwrap();
+        let result = s
+            .get_prompt_by_name("convert-markdown", Some(&args))
+            .unwrap();
+        assert_eq!(result.messages.len(), 1);
+        assert_eq!(result.messages[0].role, PromptMessageRole::User);
+    }
+
+    #[test]
+    fn get_prompt_unknown_returns_error() {
+        let s = server();
+        assert!(s.get_prompt_by_name("unknown-prompt", None).is_err());
     }
 }
