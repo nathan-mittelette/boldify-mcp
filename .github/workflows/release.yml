@@ -120,7 +120,7 @@ jobs:
           cp target/x86_64-unknown-linux-gnu/release/mcp build/mcp-http/bootstrap
 
       - name: Install OpenTofu
-        uses: opentofu/setup-opentofu@v1
+        uses: opentofu/setup-opentofu@v2
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
