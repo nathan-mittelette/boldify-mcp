@@ -1,10 +1,10 @@
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        AnnotateAble, GetPromptRequestParams, GetPromptResult, ListPromptsResult,
+        ContentBlock, GetPromptRequestParams, GetPromptResult, ListPromptsResult,
         ListResourcesResult, PaginatedRequestParams, Prompt, PromptArgument, PromptMessage,
-        PromptMessageContent, PromptMessageRole, RawResource, ReadResourceRequestParams,
-        ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo,
+        ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents, Role,
+        ServerCapabilities, ServerInfo,
     },
     schemars,
     service::RequestContext,
@@ -132,16 +132,16 @@ impl BoldifyServer {
             "convert-markdown" => {
                 let messages = if let Some(text) = user_text("text") {
                     vec![PromptMessage::new(
-                        PromptMessageRole::User,
-                        PromptMessageContent::text(format!(
+                        Role::User,
+                        ContentBlock::text(format!(
                             "Convert the following Markdown text to Unicode-formatted text:\n\n{text}"
                         )),
                     )]
                 } else {
                     vec![
                         PromptMessage::new(
-                            PromptMessageRole::User,
-                            PromptMessageContent::text(
+                            Role::User,
+                            ContentBlock::text(
                                 "Convert the following Markdown text to Unicode-formatted text:\n\
                                 \n\
                                 **Product launch** — our new *intelligent* assistant is ~~delayed~~ ==available now==!\n\
@@ -153,8 +153,8 @@ impl BoldifyServer {
                             ),
                         ),
                         PromptMessage::new(
-                            PromptMessageRole::Assistant,
-                            PromptMessageContent::text(
+                            Role::Assistant,
+                            ContentBlock::text(
                                 "I will call the `convert` tool with syntax `markdown` and the content above.\n\
                                 \n\
                                 Result: 𝐏𝐫𝐨𝐝𝐮𝐜𝐭 𝐥𝐚𝐮𝐧𝐜𝐡 — our new 𝘪𝘯𝘵𝘦𝘭𝘭𝘪𝘨𝘦𝘯𝘵 assistant is 𝐚𝐯𝐚𝐢𝐥𝐚𝐛𝐥𝐞 𝐧𝐨𝐰!\n\
@@ -172,16 +172,16 @@ impl BoldifyServer {
             "convert-html" => {
                 let messages = if let Some(text) = user_text("text") {
                     vec![PromptMessage::new(
-                        PromptMessageRole::User,
-                        PromptMessageContent::text(format!(
+                        Role::User,
+                        ContentBlock::text(format!(
                             "Convert the following HTML text to Unicode-formatted text:\n\n{text}"
                         )),
                     )]
                 } else {
                     vec![
                         PromptMessage::new(
-                            PromptMessageRole::User,
-                            PromptMessageContent::text(
+                            Role::User,
+                            ContentBlock::text(
                                 "Convert the following HTML text to Unicode-formatted text:\n\
                                 \n\
                                 <p><strong>Product launch</strong> — our new <em>intelligent</em> assistant \
@@ -194,8 +194,8 @@ impl BoldifyServer {
                             ),
                         ),
                         PromptMessage::new(
-                            PromptMessageRole::Assistant,
-                            PromptMessageContent::text(
+                            Role::Assistant,
+                            ContentBlock::text(
                                 "I will call the `convert` tool with syntax `html` and the content above.\n\
                                 \n\
                                 Result: 𝐏𝐫𝐨𝐝𝐮𝐜𝐭 𝐥𝐚𝐮𝐧𝐜𝐡 — our new 𝘪𝘯𝘵𝘦𝘭𝘭𝘪𝘨𝘦𝘯𝘵 assistant is 𝐚𝐯𝐚𝐢𝐥𝐚𝐛𝐥𝐞 𝐧𝐨𝐰!\n\
@@ -236,12 +236,10 @@ impl BoldifyServer {
     ) -> rmcp::model::CallToolResult {
         info!(syntax, content_len = content.len(), "mcp convert called");
         match self.svc.convert(&syntax, &content) {
-            Ok(result) => {
-                rmcp::model::CallToolResult::success(vec![rmcp::model::Content::text(result)])
-            }
+            Ok(result) => rmcp::model::CallToolResult::success(vec![ContentBlock::text(result)]),
             Err(e) => {
                 warn!(error = %e, syntax, "mcp convert failed");
-                rmcp::model::CallToolResult::error(vec![rmcp::model::Content::text(e.to_string())])
+                rmcp::model::CallToolResult::error(vec![ContentBlock::text(e.to_string())])
             }
         }
     }
@@ -250,10 +248,9 @@ impl BoldifyServer {
 // ── Resources ────────────────────────────────────────────────────────────────
 
 fn syntax_resource(uri: &str, name: &str, description: &str) -> rmcp::model::Resource {
-    RawResource::new(uri, name)
+    Resource::new(uri, name)
         .with_description(description)
         .with_mime_type("application/json")
-        .no_annotation()
 }
 
 // ── ServerHandler ─────────────────────────────────────────────────────────────
@@ -456,8 +453,8 @@ mod tests {
         let s = server();
         let result = s.get_prompt_by_name("convert-markdown", None).unwrap();
         assert_eq!(result.messages.len(), 2);
-        assert_eq!(result.messages[0].role, PromptMessageRole::User);
-        assert_eq!(result.messages[1].role, PromptMessageRole::Assistant);
+        assert_eq!(result.messages[0].role, Role::User);
+        assert_eq!(result.messages[1].role, Role::Assistant);
     }
 
     #[test]
@@ -465,8 +462,8 @@ mod tests {
         let s = server();
         let result = s.get_prompt_by_name("convert-html", None).unwrap();
         assert_eq!(result.messages.len(), 2);
-        assert_eq!(result.messages[0].role, PromptMessageRole::User);
-        assert_eq!(result.messages[1].role, PromptMessageRole::Assistant);
+        assert_eq!(result.messages[0].role, Role::User);
+        assert_eq!(result.messages[1].role, Role::Assistant);
     }
 
     #[test]
@@ -480,7 +477,7 @@ mod tests {
             .get_prompt_by_name("convert-markdown", Some(&args))
             .unwrap();
         assert_eq!(result.messages.len(), 1);
-        assert_eq!(result.messages[0].role, PromptMessageRole::User);
+        assert_eq!(result.messages[0].role, Role::User);
     }
 
     #[test]
