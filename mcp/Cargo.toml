@@ -10,7 +10,7 @@ http    = ["rmcp/transport-streamable-http-server", "tokio/net", "tokio/signal",
 
 [dependencies]
 service    = { path = "../service" }
-rmcp       = { version = "2.2" }
+rmcp       = { version = "3.0" }
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio      = { version = "1", features = ["rt", "macros"] }
