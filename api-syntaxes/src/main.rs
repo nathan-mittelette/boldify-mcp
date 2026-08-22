@@ -11,10 +11,10 @@ async fn main() -> Result<(), Error> {
         .init();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "api-syntaxes starting");
     let svc = ContentService::new();
-    run(service_fn(|req| handler(req, &svc))).await
+    run(service_fn(|req| std::future::ready(handler(req, &svc)))).await
 }
 
-async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, Error> {
+fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, Error> {
     info!(method = %req.method(), path = %req.uri().path(), "request received");
     let syntax = extract_query_param(&req, "syntax");
 
@@ -27,10 +27,7 @@ async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, E
             )
         }
         Some(s) => match svc.list_syntaxes(&s) {
-            Ok(symbols) => ok_json(
-                serde_json::to_string(&symbols)
-                    .expect("serialization of Vec<SupportedSymbol> cannot fail"),
-            ),
+            Ok(symbols) => ok_json(serde_json::to_string(&symbols)?),
             Err(e) => {
                 warn!(error = %e, syntax = %s, "list_syntaxes failed");
                 error_response(service_error_code(&e), &e.to_string())
@@ -49,9 +46,10 @@ fn service_error_code(e: &ServiceError) -> &'static str {
 
 fn extract_query_param(req: &Request, key: &str) -> Option<String> {
     req.uri().query().and_then(|q| {
-        q.split('&')
-            .find(|p| p.starts_with(&format!("{}=", key)))
-            .map(|p| p[key.len() + 1..].to_string())
+        q.split('&').find_map(|parameter| {
+            let (parameter_key, value) = parameter.split_once('=')?;
+            (parameter_key == key).then(|| value.to_string())
+        })
     })
 }
 
@@ -95,10 +93,7 @@ mod tests {
                 "Missing 'syntax' parameter. Accepted values: markdown, html",
             ),
             Some(s) => match svc.list_syntaxes(&s) {
-                Ok(symbols) => ok_json(
-                    serde_json::to_string(&symbols)
-                        .expect("serialization of Vec<SupportedSymbol> cannot fail"),
-                ),
+                Ok(symbols) => ok_json(serde_json::to_string(&symbols)?),
                 Err(e) => error_response(service_error_code(&e), &e.to_string()),
             },
         }
@@ -203,6 +198,15 @@ mod tests {
     #[test]
     fn extract_query_param_multiple_params() {
         let req = build_request("GET", "/syntaxes?foo=bar&syntax=html");
+        assert_eq!(
+            extract_query_param(&req, "syntax"),
+            Some("html".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_query_param_ignore_les_cles_avec_un_prefixe_commun() {
+        let req = build_request("GET", "/syntaxes?syntax-extra=xml&syntax=html");
         assert_eq!(
             extract_query_param(&req, "syntax"),
             Some("html".to_string())

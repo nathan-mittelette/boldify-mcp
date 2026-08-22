@@ -17,10 +17,10 @@ async fn main() -> Result<(), Error> {
         .init();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "api-convert starting");
     let svc = ContentService::new();
-    run(service_fn(|req| handler(req, &svc))).await
+    run(service_fn(|req| std::future::ready(handler(req, &svc)))).await
 }
 
-async fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, Error> {
+fn handler(req: Request, svc: &ContentService) -> Result<Response<Body>, Error> {
     info!(method = %req.method(), path = %req.uri().path(), "request received");
     let bytes = body_bytes(req.body());
 
