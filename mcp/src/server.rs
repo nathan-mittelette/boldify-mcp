@@ -1,10 +1,10 @@
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        ContentBlock, GetPromptRequestParams, GetPromptResult, ListPromptsResult,
-        ListResourcesResult, PaginatedRequestParams, Prompt, PromptArgument, PromptMessage,
-        ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents, Role,
-        ServerCapabilities, ServerInfo,
+        ContentBlock, GetPromptRequestParams, GetPromptResponse, GetPromptResult,
+        ListPromptsResult, ListResourcesResult, PaginatedRequestParams, Prompt, PromptArgument,
+        PromptMessage, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
+        Resource, ResourceContents, Role, ServerCapabilities, ServerInfo,
     },
     schemars,
     service::RequestContext,
@@ -31,7 +31,10 @@ pub struct ConvertParams {
 #[derive(Clone)]
 pub struct BoldifyServer {
     svc: ContentService,
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "the rmcp tool_router macro requires this generated router field"
+    )]
     tool_router: ToolRouter<BoldifyServer>,
 }
 
@@ -285,9 +288,9 @@ impl ServerHandler for BoldifyServer {
         &self,
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
+    ) -> Result<ReadResourceResponse, McpError> {
         info!(uri = %request.uri, "mcp read_resource called");
-        self.read_resource_by_uri(&request.uri)
+        self.read_resource_by_uri(&request.uri).map(Into::into)
     }
 
     async fn list_prompts(
@@ -302,9 +305,10 @@ impl ServerHandler for BoldifyServer {
         &self,
         request: GetPromptRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<GetPromptResult, McpError> {
+    ) -> Result<GetPromptResponse, McpError> {
         info!(name = %request.name, "mcp get_prompt called");
         self.get_prompt_by_name(request.name.as_str(), request.arguments.as_ref())
+            .map(Into::into)
     }
 }
 

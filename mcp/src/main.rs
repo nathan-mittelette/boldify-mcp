@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use rmcp::transport::streamable_http_server::{
-        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
+        session::never::NeverSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
     use server::BoldifyServer;
 
@@ -54,10 +54,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let service = StreamableHttpService::new(
         || Ok(BoldifyServer::new()),
-        LocalSessionManager::default().into(),
+        NeverSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .disable_allowed_hosts()
-            .with_stateful_mode(false)
             .with_json_response(true),
     );
 

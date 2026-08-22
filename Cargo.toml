@@ -12,7 +12,7 @@ resolver = "2"
 
 [workspace.package]
 version      = "0.1.0"
-rust-version = "1.80"
+rust-version = "1.88"
 
 [profile.release]
 debug = false
@@ -21,3 +21,4 @@ codegen-units = 1
 opt-level = "z"
 lto = true
 panic = "abort"
+overflow-checks = true

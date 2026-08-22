@@ -37,8 +37,7 @@ impl Parser for MarkdownParser {
         let mut pending_newlines: usize = 0;
         let mut first_node = true;
 
-        while i < lines.len() {
-            let line = &lines[i];
+        while let Some(line) = lines.get(i) {
             if line.text.trim().is_empty() {
                 // Each blank line adds one extra \n (beyond the normal post-line \n)
                 if !first_node {
@@ -86,76 +85,30 @@ impl Parser for MarkdownParser {
             first_node = false;
 
             if let Some((bullet, _, list_start_offset)) = try_strip_unordered_prefix(line.text) {
-                let list_start = line.start + list_start_offset;
-                let mut list_end = line.end;
-                let mut children = Vec::new();
-
-                while i < lines.len() {
-                    let line = &lines[i];
-                    if line.text.trim().is_empty() {
-                        break;
-                    }
-
-                    let Some((next_bullet, rest, content_offset)) =
-                        try_strip_unordered_prefix(line.text)
-                    else {
-                        break;
-                    };
-
-                    if next_bullet != bullet {
-                        break;
-                    }
-
-                    list_end = line.end;
-                    children.push(InlineNode::ListItem(build_list_item(
-                        rest,
-                        line.number,
-                        line.start + content_offset,
-                        column_at(line.text, content_offset),
-                        &mut id_gen,
-                    )?));
-                    i += 1;
-                }
-
-                nodes.push(ContainerNode {
-                    base: NodeBase::new(id_gen.next_id(), Span::new(list_start, list_end)),
-                    container_type: ContainerType::List,
-                    children,
-                });
+                let parsed = parse_list(
+                    &lines,
+                    i,
+                    line,
+                    list_start_offset,
+                    ListKind::Unordered(bullet),
+                    &mut id_gen,
+                )?;
+                nodes.push(parsed.node);
+                i = parsed.next_line;
                 continue;
             }
 
             if let Some((_, list_start_offset)) = try_strip_ordered_prefix(line.text) {
-                let list_start = line.start + list_start_offset;
-                let mut list_end = line.end;
-                let mut children = Vec::new();
-
-                while i < lines.len() {
-                    let line = &lines[i];
-                    if line.text.trim().is_empty() {
-                        break;
-                    }
-
-                    let Some((rest, content_offset)) = try_strip_ordered_prefix(line.text) else {
-                        break;
-                    };
-
-                    list_end = line.end;
-                    children.push(InlineNode::ListItem(build_list_item(
-                        rest,
-                        line.number,
-                        line.start + content_offset,
-                        column_at(line.text, content_offset),
-                        &mut id_gen,
-                    )?));
-                    i += 1;
-                }
-
-                nodes.push(ContainerNode {
-                    base: NodeBase::new(id_gen.next_id(), Span::new(list_start, list_end)),
-                    container_type: ContainerType::OrderedList,
-                    children,
-                });
+                let parsed = parse_list(
+                    &lines,
+                    i,
+                    line,
+                    list_start_offset,
+                    ListKind::Ordered,
+                    &mut id_gen,
+                )?;
+                nodes.push(parsed.node);
+                i = parsed.next_line;
                 continue;
             }
 
@@ -222,6 +175,75 @@ struct LineInfo<'a> {
     start: usize,
     end: usize,
     number: usize,
+}
+
+#[derive(Clone, Copy)]
+enum ListKind {
+    Unordered(char),
+    Ordered,
+}
+
+struct ParsedList {
+    node: ContainerNode,
+    next_line: usize,
+}
+
+fn parse_list(
+    lines: &[LineInfo<'_>],
+    start_index: usize,
+    first_line: &LineInfo<'_>,
+    content_start_offset: usize,
+    kind: ListKind,
+    id_gen: &mut NodeIdGen,
+) -> Result<ParsedList, ParseError> {
+    let list_start = first_line.start + content_start_offset;
+    let mut list_end = first_line.end;
+    let mut children = Vec::new();
+    let mut next_line = start_index;
+
+    while let Some(line) = lines.get(next_line) {
+        if line.text.trim().is_empty() {
+            break;
+        }
+
+        let Some((rest, content_offset)) = list_item_content(line.text, kind) else {
+            break;
+        };
+
+        list_end = line.end;
+        children.push(InlineNode::ListItem(build_list_item(
+            rest,
+            line.number,
+            line.start + content_offset,
+            column_at(line.text, content_offset),
+            id_gen,
+        )?));
+        next_line += 1;
+    }
+
+    let container_type = match kind {
+        ListKind::Unordered(_) => ContainerType::List,
+        ListKind::Ordered => ContainerType::OrderedList,
+    };
+
+    Ok(ParsedList {
+        node: ContainerNode {
+            base: NodeBase::new(id_gen.next_id(), Span::new(list_start, list_end)),
+            container_type,
+            children,
+        },
+        next_line,
+    })
+}
+
+fn list_item_content(line: &str, kind: ListKind) -> Option<(&str, usize)> {
+    match kind {
+        ListKind::Unordered(expected_bullet) => {
+            let (bullet, rest, content_offset) = try_strip_unordered_prefix(line)?;
+            (bullet == expected_bullet).then_some((rest, content_offset))
+        }
+        ListKind::Ordered => try_strip_ordered_prefix(line),
+    }
 }
 
 fn collect_lines(input: &str) -> Vec<LineInfo<'_>> {
@@ -452,6 +474,15 @@ mod tests {
             .filter(|n| matches!(n, InlineNode::ListItem(_)))
             .count();
         assert_eq!(list_items, 2);
+    }
+
+    #[test]
+    fn un_changement_de_puce_demarre_une_nouvelle_liste() {
+        let result = MarkdownParser.parse("- premier\n* second").unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].container_type, ContainerType::List);
+        assert_eq!(result[2].container_type, ContainerType::List);
     }
 
     // ── Nesting ──────────────────────────────────────────────────────────────
