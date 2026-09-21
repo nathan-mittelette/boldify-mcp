@@ -4,7 +4,7 @@ use rmcp::{
         ContentBlock, GetPromptRequestParams, GetPromptResponse, GetPromptResult,
         ListPromptsResult, ListResourcesResult, PaginatedRequestParams, Prompt, PromptArgument,
         PromptMessage, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
-        Resource, ResourceContents, Role, ServerCapabilities, ServerInfo,
+        Resource, ResourceContents, Role, ServerCapabilities, ServerConfig,
     },
     schemars,
     service::RequestContext,
@@ -260,8 +260,8 @@ fn syntax_resource(uri: &str, name: &str, description: &str) -> rmcp::model::Res
 
 #[rmcp::tool_handler]
 impl ServerHandler for BoldifyServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(
             ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
