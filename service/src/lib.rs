@@ -5,6 +5,34 @@ use converter::convert;
 use parser::{HtmlParser, MarkdownParser, Parser, SupportedSymbol};
 use tracing::{info, warn};
 
+/// Zero-width space (U+200B) placed on empty lines of the output.
+///
+/// LinkedIn's post composer strips truly empty lines when pasting plain text
+/// (known issue, Oct 2026): a blank line between two paragraphs collapses and
+/// the post becomes a wall of text. A zero-width space keeps the visual line
+/// break; the character is invisible to the reader.
+const LINKEDIN_EMPTY_LINE_PLACEHOLDER: char = '\u{200B}';
+
+/// Puts a zero-width space on every empty (or whitespace-only) line so that
+/// LinkedIn keeps the line breaks when the text is pasted. Non-empty lines are
+/// returned untouched, preserving Unicode formatting.
+fn prepare_for_linkedin(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+
+    text.lines()
+        .map(|line| {
+            if line.trim().is_empty() {
+                LINKEDIN_EMPTY_LINE_PLACEHOLDER.to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[derive(Clone)]
 pub struct ContentService {
     markdown_parser: MarkdownParser,
@@ -57,7 +85,7 @@ impl ContentService {
             other => return Err(ServiceError::UnsupportedSyntax(other.to_string())),
         };
 
-        let result = convert(&nodes);
+        let result = prepare_for_linkedin(&convert(&nodes));
         info!(syntax, output_len = result.len(), "convert succeeded");
         Ok(result)
     }
@@ -257,5 +285,47 @@ mod tests {
         for handle in handles {
             assert_eq!(handle.join().unwrap(), expected);
         }
+    }
+
+    // ── LinkedIn empty-line handling ─────────────────────────────────────────
+
+    #[test]
+    fn empty_lines_get_zero_width_space() {
+        let svc = ContentService::new();
+        let result = svc.convert("markdown", "Para un\n\nPara deux").unwrap();
+        assert_eq!(result, "Para un\n\u{200B}\nPara deux");
+    }
+
+    #[test]
+    fn whitespace_only_lines_get_zero_width_space() {
+        let svc = ContentService::new();
+        let result = svc.convert("markdown", "A\n   \nB").unwrap();
+        assert_eq!(result, "A\n\u{200B}\nB");
+    }
+
+    #[test]
+    fn single_line_output_is_unchanged() {
+        let svc = ContentService::new();
+        let result = svc.convert("markdown", "just one line").unwrap();
+        assert_eq!(result, "just one line");
+    }
+
+    #[test]
+    fn unicode_formatting_is_preserved_with_empty_lines() {
+        let svc = ContentService::new();
+        let result = svc.convert("markdown", "**Bold**\n\n*italic*").unwrap();
+        // Le gras et l'italique Unicode sont présents, la ligne vide a un U+200B
+        assert!(result.contains('\u{1D5D5}')); // 𝗕 gras mathématique
+        assert!(result.contains("\n\u{200B}\n"));
+    }
+
+    #[test]
+    fn prepare_for_linkedin_empty_input() {
+        assert_eq!(prepare_for_linkedin(""), "");
+    }
+
+    #[test]
+    fn prepare_for_linkedin_no_empty_lines() {
+        assert_eq!(prepare_for_linkedin("a\nb"), "a\nb");
     }
 }
